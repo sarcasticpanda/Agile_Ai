@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+.vite/
+dist/
+build/
+out/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Logs and caches
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+*.cache
+
+# Editor and OS artifacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Environment overrides
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
