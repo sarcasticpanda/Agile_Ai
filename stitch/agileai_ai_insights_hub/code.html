@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AgileAI | AI Insights Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#5E6AD2",
+                        "background-light": "#f7f8f8",
+                        "background-dark": "#08090a",
+                        "card-dark": "#151618",
+                        "border-dark": "#242629",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "8px",
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .linear-gradient-text {
+            background: linear-gradient(to bottom right, #fff, #8a8a8a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .radial-progress-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
+<nav class="border-b border-slate-200 dark:border-border-dark py-3 px-6 sticky top-0 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-50">
+<div class="max-w-7xl mx-auto flex items-center justify-between">
+<div class="flex items-center space-x-8">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 bg-primary rounded-md flex items-center justify-center">
+<span class="material-icons-outlined text-white text-xs">bolt</span>
+</div>
+<span class="font-semibold tracking-tight text-lg">AgileAI</span>
+</div>
+<div class="hidden md:flex items-center space-x-6 text-sm font-medium text-slate-500 dark:text-slate-400">
+<a class="hover:text-primary transition-colors" href="#">Project</a>
+<a class="hover:text-primary transition-colors" href="#">Issues</a>
+<a class="hover:text-primary transition-colors" href="#">Cycles</a>
+<a class="text-slate-900 dark:text-slate-100 border-b-2 border-primary py-1" href="#">Insights</a>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<button class="text-slate-400 hover:text-white transition-colors">
+<span class="material-icons-outlined text-xl">search</span>
+</button>
+<button class="bg-primary hover:bg-opacity-90 text-white text-xs font-medium px-3 py-1.5 rounded transition-all">
+                    New Insight
+                </button>
+<div class="w-8 h-8 rounded-full bg-slate-800 border border-border-dark"></div>
+</div>
+</div>
+</nav>
+<header class="pt-12 pb-8 px-6 max-w-7xl mx-auto">
+<div class="flex items-center justify-between mb-8">
+<div>
+<nav class="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 mb-2">
+<span>Engineering</span>
+<span class="material-icons-outlined text-[10px]">chevron_right</span>
+<span>Sprint 42</span>
+<span class="material-icons-outlined text-[10px]">chevron_right</span>
+<span class="text-slate-900 dark:text-slate-200">AI Insights Hub</span>
+</nav>
+<h1 class="text-3xl font-bold tracking-tight linear-gradient-text">Sprint Intelligence</h1>
+</div>
+<div class="flex items-center space-x-1 bg-slate-100 dark:bg-card-dark p-1 rounded-lg border border-slate-200 dark:border-border-dark">
+<button class="px-4 py-1.5 text-xs font-medium rounded-md bg-white dark:bg-slate-800 shadow-sm text-slate-900 dark:text-slate-100 transition-all">Risk Prediction</button>
+<button class="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-all">Effort Estimation</button>
+<button class="px-4 py-1.5 text-xs font-medium rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-all">Capacity Planning</button>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+<div class="lg:col-span-4 bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-xl p-8 flex flex-col items-center justify-center relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4">
+<span class="material-icons-outlined text-slate-400 cursor-help">info</span>
+</div>
+<h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-8 uppercase tracking-widest">Sprint Risk Score</h3>
+<div class="relative w-48 h-48 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90">
+<circle class="text-slate-100 dark:text-slate-800" cx="96" cy="96" fill="transparent" r="88" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-orange-500" cx="96" cy="96" fill="transparent" r="88" stroke="currentColor" stroke-dasharray="552.92" stroke-dashoffset="99.5" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute flex flex-col items-center">
+<span class="text-5xl font-bold text-orange-500">82%</span>
+<span class="text-sm font-semibold text-orange-500 uppercase tracking-wider mt-1">High Risk</span>
+</div>
+</div>
+<div class="mt-8 text-center">
+<p class="text-sm text-slate-600 dark:text-slate-400">
+                        Probability of missing current <br/> sprint commitments.
+                    </p>
+</div>
+</div>
+<div class="lg:col-span-8 bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-xl p-6">
+<div class="flex items-center justify-between mb-8">
+<h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Key Risk Factors (SHAP Values)</h3>
+<span class="text-xs text-slate-400">Impact on risk score</span>
+</div>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between text-sm mb-2">
+<span class="font-medium">Blocked Tasks</span>
+<span class="text-orange-500 font-semibold">+34%</span>
+</div>
+<div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+<div class="bg-orange-500 h-full rounded-full" style="width: 34%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-sm mb-2">
+<span class="font-medium">Scope Creep</span>
+<span class="text-orange-400 font-semibold">+22%</span>
+</div>
+<div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+<div class="bg-orange-400 h-full rounded-full" style="width: 22%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-sm mb-2">
+<span class="font-medium">Developer Velocity (Decrease)</span>
+<span class="text-amber-500 font-semibold">+18%</span>
+</div>
+<div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+<div class="bg-amber-500 h-full rounded-full" style="width: 18%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-sm mb-2">
+<span class="font-medium">PR Review Speed</span>
+<span class="text-emerald-500 font-semibold">-8%</span>
+</div>
+<div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden flex justify-end">
+<div class="bg-emerald-500 h-full rounded-full" style="width: 8%"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<div class="lg:col-span-8 bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-xl overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-border-dark flex items-center justify-between">
+<h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-widest">Effort Prediction Analysis</h3>
+<div class="flex space-x-2">
+<button class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+<span class="material-icons-outlined text-sm">filter_list</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left text-sm">
+<thead>
+<tr class="bg-slate-50 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400">
+<th class="px-6 py-4 font-medium">Issue</th>
+<th class="px-6 py-4 font-medium">Assignee</th>
+<th class="px-6 py-4 font-medium">Est. Hours</th>
+<th class="px-6 py-4 font-medium">AI Predicted</th>
+<th class="px-6 py-4 font-medium">Confidence</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100 dark:divide-border-dark">
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<span class="text-primary font-mono text-xs">AG-102</span>
+<span class="font-medium">Refactor GraphQL Schema</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center space-x-2">
+<div class="w-5 h-5 rounded-full bg-indigo-500"></div>
+<span>Alex Riva</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-500">8h</td>
+<td class="px-6 py-4 font-semibold text-orange-400">14.5h</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded text-[10px] font-bold">HIGH</span>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<span class="text-primary font-mono text-xs">AG-114</span>
+<span class="font-medium">OAuth2 Integration</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center space-x-2">
+<div class="w-5 h-5 rounded-full bg-pink-500"></div>
+<span>Sarah J.</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-500">12h</td>
+<td class="px-6 py-4 font-semibold">13.2h</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded text-[10px] font-bold">MED</span>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<span class="text-primary font-mono text-xs">AG-122</span>
+<span class="font-medium">Dark Mode CSS variables</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center space-x-2">
+<div class="w-5 h-5 rounded-full bg-amber-500"></div>
+<span>Marc K.</span>
+</div>
+</td>
+<td class="px-6 py-4 text-slate-500">4h</td>
+<td class="px-6 py-4 font-semibold text-emerald-500">3.5h</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded text-[10px] font-bold">HIGH</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="lg:col-span-4 space-y-6">
+<div class="bg-primary/5 border border-primary/20 rounded-xl p-6">
+<div class="flex items-center space-x-2 mb-4">
+<span class="material-icons-outlined text-primary">auto_awesome</span>
+<h3 class="text-sm font-semibold text-primary uppercase tracking-wider">AI Executive Summary</h3>
+</div>
+<div class="prose prose-sm dark:prose-invert">
+<p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+                            The current sprint is at <strong class="text-slate-900 dark:text-white">82% risk</strong> primarily due to 3 critical bottlenecks in the GraphQL schema refactor.
+                        </p>
+<p class="text-slate-600 dark:text-slate-400 leading-relaxed mt-2">
+                            Historical data suggests <span class="underline decoration-primary/40">Alex Riva</span> typically requires 40% more time for schema-related tasks than estimated.
+                        </p>
+<div class="mt-4 p-3 bg-white dark:bg-card-dark rounded-lg border border-primary/10 flex items-start space-x-3">
+<span class="material-icons-outlined text-amber-500 text-sm mt-0.5">lightbulb</span>
+<p class="text-xs italic text-slate-500 dark:text-slate-400">
+                                Recommendation: Reassign "OAuth Integration" to Marc K. to balance capacity.
+                            </p>
+</div>
+</div>
+<button class="w-full mt-6 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-all">
+                        Apply AI Adjustments
+                    </button>
+</div>
+<div class="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-xl p-6">
+<h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Model Confidence</h3>
+<div class="flex items-end space-x-1 h-24 mb-4">
+<div class="bg-primary/20 w-full h-[60%] rounded-t-sm"></div>
+<div class="bg-primary/40 w-full h-[75%] rounded-t-sm"></div>
+<div class="bg-primary/60 w-full h-[90%] rounded-t-sm"></div>
+<div class="bg-primary/80 w-full h-[85%] rounded-t-sm"></div>
+<div class="bg-primary w-full h-[95%] rounded-t-sm"></div>
+</div>
+<p class="text-xs text-slate-500">Based on 1,420 historical cycles.</p>
+</div>
+</div>
+</div>
+</header>
+<footer class="mt-20 border-t border-slate-200 dark:border-border-dark py-12 px-6">
+<div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center opacity-50 grayscale">
+<div class="flex items-center space-x-2 mb-4 md:mb-0">
+<div class="w-4 h-4 bg-slate-400 rounded-sm"></div>
+<span class="text-xs font-bold tracking-tighter">AGILEAI PLATFORM</span>
+</div>
+<div class="flex space-x-8 text-[10px] font-medium uppercase tracking-[0.2em]">
+<a class="hover:text-primary transition-colors" href="#">Documentation</a>
+<a class="hover:text-primary transition-colors" href="#">API</a>
+<a class="hover:text-primary transition-colors" href="#">Status</a>
+<a class="hover:text-primary transition-colors" href="#">Privacy</a>
+</div>
+</div>
+</footer>
+
+</body></html>

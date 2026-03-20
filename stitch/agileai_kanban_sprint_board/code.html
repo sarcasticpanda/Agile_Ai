@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AgileAI Kanban Sprint Board</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#5E6AD2",
+                        "background-light": "#F7F8F9",
+                        "background-dark": "#08090A",
+                        "surface-light": "#FFFFFF",
+                        "surface-dark": "#111214",
+                        "border-light": "#E2E4E6",
+                        "border-dark": "#1F2124",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "8px",
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .task-card:hover .drag-handle {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+<aside class="fixed left-0 top-0 h-full w-64 border-r border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark hidden lg:flex flex-col z-20">
+<div class="p-4 flex items-center space-x-2">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-white text-lg">bolt</span>
+</div>
+<span class="font-semibold text-lg tracking-tight">AgileAI</span>
+</div>
+<nav class="flex-1 px-3 space-y-1 mt-4">
+<a class="flex items-center space-x-3 px-3 py-2 rounded-md bg-slate-100 dark:bg-slate-800 text-primary font-medium" href="#">
+<span class="material-icons-round text-sm">view_kanban</span>
+<span>Active Sprint</span>
+</a>
+<a class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" href="#">
+<span class="material-icons-round text-sm">list_alt</span>
+<span>Backlog</span>
+</a>
+<a class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" href="#">
+<span class="material-icons-round text-sm">auto_fix_high</span>
+<span>AI Insights</span>
+</a>
+<div class="pt-4 pb-2 px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">Workspace</div>
+<a class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" href="#">
+<span class="material-icons-round text-sm">group</span>
+<span>Team Members</span>
+</a>
+<a class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" href="#">
+<span class="material-icons-round text-sm">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="p-4 border-t border-border-light dark:border-border-dark">
+<button class="flex items-center space-x-3 px-3 py-2 w-full rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" onclick="document.documentElement.classList.toggle('dark')">
+<span class="material-icons-round text-sm">dark_mode</span>
+<span>Switch Theme</span>
+</button>
+</div>
+</aside>
+<main class="lg:ml-64 flex flex-col min-h-screen">
+<header class="h-16 border-b border-border-light dark:border-border-dark flex items-center justify-between px-6 bg-surface-light dark:bg-surface-dark sticky top-0 z-10">
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1 rounded-md transition-all">
+<span class="font-medium text-slate-900 dark:text-white">Sprint 12</span>
+<span class="material-icons-round text-sm text-slate-400">expand_more</span>
+</div>
+<div class="h-4 w-[1px] bg-border-light dark:border-border-dark"></div>
+<div class="text-sm text-slate-500 font-medium">Oct 12 — Oct 26</div>
+</div>
+<div class="flex items-center space-x-3">
+<div class="flex -space-x-2 mr-4">
+<img alt="Team member" class="w-8 h-8 rounded-full border-2 border-surface-light dark:border-surface-dark" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBql3f1wzt9InrcKEVRVMZCP9BpO_ygphU79tQDZsBrwJgRKpLZ45QNWdW3H1JFLQRrJzt04aHwsFZ4WekW2XyDa6XvgQFphDHywW0Owds5v_ghfA9g1LirzDZvxevL29wzbNV5HJdbHsrL2U_ztiiG93R9GHvnvbyhfVX4RyY1p3T1Z17R_dDdsM5B2LyBpS5hqBhUk2JIpMadK9G7jigBLSG4rEMlvhuRdJ1tmn-dqvha68lj7rM2-IpA22yyHYuMfRVzRNjWbC8"/>
+<img alt="Team member" class="w-8 h-8 rounded-full border-2 border-surface-light dark:border-surface-dark" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgvcl9b-JW0yyerzehSLuyqZtLaPfrZUTrn1c5r55pByMTxrlssNa0LtNvApjA71oAGMq0uLLjbj2KRrQkEKfKs6YUVcreRHzwLrx6UJlQJ43svAv--B_Qg3CIrL7b6esQUJUuct8qjK2Zvtw3v-_sse01OCFNKR3uLaLrgAyPokDR0LGl1zTdK5kBiJVmfpsdOQ8tv3E8eF11hkHINScik0X-ZI4_KKauff2bbKDOvVanu-kwkFmCB_L8C17WnvvJoWryH_r5m-k"/>
+<img alt="Team member" class="w-8 h-8 rounded-full border-2 border-surface-light dark:border-surface-dark" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5AJgpCyWWexG_cEP5t4vJri_wYCM3eB_LO31iPnbYsvk-kfIe8vdurK5sgZFfteHC2kHAVGb3RY26egpZSYd6a7qcyga5kgPt0LiKRYckY3ZzL7iuDBBOz64riC9iezIwswemj2d66V1OS8lRdKBd6EwDAwxWZ6r24cAD5_y3MzHWTQbUnjlimdIYLKlxDc1Eau0cS4gkaYpeIpJKTUBFb2_2NTo1sXkhzqczrhKtbwmsFq6r0u32HjnEl6178MJ_zFn-KDVhKT8"/>
+<div class="w-8 h-8 rounded-full border-2 border-surface-light dark:border-surface-dark bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold">+4</div>
+</div>
+<button class="bg-primary hover:bg-indigo-600 text-white px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center">
+                    Complete Sprint
+                </button>
+</div>
+</header>
+<div class="px-6 py-4 flex items-center justify-between">
+<div class="flex items-center space-x-4 overflow-x-auto scrollbar-hide">
+<div class="flex items-center space-x-1 px-3 py-1.5 rounded-full border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-xs font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+<span class="material-icons-round text-xs">filter_list</span>
+<span>Filter</span>
+</div>
+<div class="flex items-center space-x-1 px-3 py-1.5 rounded-full border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-xs font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+<span class="material-icons-round text-xs">sort</span>
+<span>Sort</span>
+</div>
+<div class="flex items-center space-x-1 px-3 py-1.5 rounded-full border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-xs font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+<span class="material-icons-round text-xs">person_outline</span>
+<span>Assignee</span>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<span class="text-xs text-slate-500 font-medium">8 tasks remaining</span>
+</div>
+</div>
+<div class="flex-1 px-6 pb-6 overflow-x-auto">
+<div class="flex space-x-6 h-full min-w-max">
+<div class="w-80 flex flex-col space-y-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center space-x-2">
+<div class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+<h3 class="font-semibold text-sm uppercase tracking-wider text-slate-500 dark:text-slate-400">To Do</h3>
+<span class="text-xs font-bold text-slate-400 ml-1">4</span>
+</div>
+<button class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md transition-colors">
+<span class="material-icons-round text-lg text-slate-400">more_horiz</span>
+</button>
+</div>
+<div class="flex-1 space-y-3 overflow-y-auto pr-1 scrollbar-hide">
+<div class="task-card bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">Critical</span>
+<span class="drag-handle opacity-0 transition-opacity material-icons-round text-slate-300 text-base">drag_indicator</span>
+</div>
+<h4 class="text-sm font-semibold mb-3 leading-tight">Refactor Auth Middleware for multi-tenant support</h4>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDA0oSIAih_QYPUwn3c3Ea5kCTlRk7c9pAmRhgyFT9kHnngAJzHXfZLCTu07wW_Ro3mhsIS1qj-itsF9rDlQpvF0vw2gg-cKiMwqrwVQDxIauYMzPGZXq-0xnkUx4YFB3Bk-UtksY99sZYerF-WQ08rN1LNoVBxrTlFyw4mQVNp8MtcEG71C2W2I6blJBQpwXS6MgNtONtx49MJLSGIm7X-u5QHB6Ex_Prl2sQ2Fsyfq-vXRgfsgkGbDTxmMv4zm0jvmDW1DpmExaM"/>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">5</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 18</span>
+</div>
+</div>
+<div class="task-card bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400">Medium</span>
+<span class="drag-handle opacity-0 transition-opacity material-icons-round text-slate-300 text-base">drag_indicator</span>
+</div>
+<h4 class="text-sm font-semibold mb-3 leading-tight">Implement dark mode toggle on dashboard v2</h4>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyiGDH_zq5oVHOK4UEsWBd2ixd4h2Le3fqWjjc-9rUBNrJcu55yqWES2IlvTpatBOL_ccMFsgwExfhyQ0M2LvwRttV9jW3AZPSuzpYw2Uj35jPqqnEu9nIV0aAPxZMCBGguqYgToKKgNE9tbhBiXFZAmh_6JpeahqZLh_tT6gxcUo2OdfxVuosdChI4cnzAp_vMndOzm3ebwaq2pONd7EFE3N_V0RgcyOQG2aqziwE0mYreavXZxqpcLmbq3QdkCqYNJhUqR62nXo"/>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">3</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 20</span>
+</div>
+</div>
+<button class="w-full py-2 border-2 border-dashed border-border-light dark:border-border-dark rounded-xl flex items-center justify-center space-x-2 text-slate-400 hover:text-primary hover:border-primary/50 transition-all text-sm font-medium">
+<span class="material-icons-round text-base">add</span>
+<span>Add task</span>
+</button>
+</div>
+</div>
+<div class="w-80 flex flex-col space-y-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center space-x-2">
+<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>
+<h3 class="font-semibold text-sm uppercase tracking-wider text-slate-500 dark:text-slate-400">In Progress</h3>
+<span class="text-xs font-bold text-slate-400 ml-1">2</span>
+</div>
+<button class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md transition-colors">
+<span class="material-icons-round text-lg text-slate-400">more_horiz</span>
+</button>
+</div>
+<div class="flex-1 space-y-3 overflow-y-auto pr-1 scrollbar-hide">
+<div class="task-card bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<div class="flex space-x-1">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">AI Task</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">Critical</span>
+</div>
+<span class="drag-handle opacity-0 transition-opacity material-icons-round text-slate-300 text-base">drag_indicator</span>
+</div>
+<h4 class="text-sm font-semibold mb-2 leading-tight">Update Landing Page Hero with new interactive 3D model</h4>
+<div class="mb-3">
+<div class="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden">
+<div class="bg-primary w-[65%] h-full rounded-full"></div>
+</div>
+<div class="flex justify-between mt-1">
+<span class="text-[10px] text-slate-400">65% complete</span>
+<span class="text-[10px] text-slate-400 flex items-center"><span class="material-icons-round text-[10px] mr-1">bolt</span>Active AI agent</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3">
+<div class="relative">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBS-XikpT3bAzcdQQyrD0IslaSgke8KyUa7ThKamchl4YQ6_9kS-6E8LhIZxz67RQvZRbGTR1jyvS45Z2y8niy7i6Wq0hn1dZKJW0KbgsQpFv-CvZxRtg_hLOLofgSLIN8n0tJVWDrRmQaD0UqcmbIVC8nXosiPA2qVMq9jwFQ5XUd05vIg3SOeLvy3o93NXN3LdRjT8ew2jtkNTFzxkWHZ2bcR4zCNKRGc2Vto7sR-DTDwt8QEypTvei0cFoftK08KGdCe2ZZFjnU"/>
+<div class="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-surface-light dark:border-surface-dark"></div>
+</div>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">8</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 15</span>
+</div>
+</div>
+<div class="task-card bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400">Medium</span>
+<span class="drag-handle opacity-0 transition-opacity material-icons-round text-slate-300 text-base">drag_indicator</span>
+</div>
+<h4 class="text-sm font-semibold mb-3 leading-tight">API Documentation - Webhooks section overhaul</h4>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBL-oR_ZFs_6BPr4AnaBrhksho97ZfbLsrYar747-QXiFX2SdwPehovzXp5YxJfwqBI4wHqdcC8T_rI5cnpkL7vhuNjdQShahtFMd-TVDonI5qUfEhrg10QPbvM6QZa_2z-aGEaJXDxlHuhBQuD-m4AX2wHs5yDfNoSZ28eL4HRSD_gb1dGNo6qMvIYk4PvVueap5s9-AVCJE23gjMkG94Hb7XXQcLEUHi_6XmwZuSQlmLotB2w47Z8ftl2UUQktExn9OxumGLbVvc"/>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">3</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 19</span>
+</div>
+</div>
+<button class="w-full py-2 border-2 border-dashed border-border-light dark:border-border-dark rounded-xl flex items-center justify-center space-x-2 text-slate-400 hover:text-primary hover:border-primary/50 transition-all text-sm font-medium">
+<span class="material-icons-round text-base">add</span>
+<span>Add task</span>
+</button>
+</div>
+</div>
+<div class="w-80 flex flex-col space-y-4">
+<div class="flex items-center justify-between px-2">
+<div class="flex items-center space-x-2">
+<div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+<h3 class="font-semibold text-sm uppercase tracking-wider text-slate-500 dark:text-slate-400">Done</h3>
+<span class="text-xs font-bold text-slate-400 ml-1">3</span>
+</div>
+<button class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md transition-colors">
+<span class="material-icons-round text-lg text-slate-400">more_horiz</span>
+</button>
+</div>
+<div class="flex-1 space-y-3 overflow-y-auto pr-1 scrollbar-hide">
+<div class="task-card bg-surface-light/60 dark:bg-surface-dark/60 border border-border-light dark:border-border-dark rounded-xl p-4 shadow-none opacity-80 cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500">Completed</span>
+<span class="material-icons-round text-green-500 text-lg">check_circle</span>
+</div>
+<h4 class="text-sm font-semibold mb-3 leading-tight text-slate-500 dark:text-slate-400 line-through">Fix memory leak in Chat component</h4>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3 grayscale">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNJ-7S7CCpOx8fmXW3Q9HPcw-NxFutuSxaaPffi_DJeUw7WoNWlLtXqCnGLJNvO6-QAgF8cN66lc3PAiT24Am83kCjibYQTF5dWNri5sUCMy8_cItjafuu3L2HnhzO_rEfDcm5qTZuEBqIdKyYJJk9ij0cNFWcdX5uTEVGRJgrbXhAiiejV3d1u11RzBFmYd8oxeDQrJtqO5eGbt6gQ7ii2EB4INHkYn-Z77iUhimQztm5o3h4yDAWCw2feteTrjHWjFFfFEV1VdU"/>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">13</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 10</span>
+</div>
+</div>
+<div class="task-card bg-surface-light/60 dark:bg-surface-dark/60 border border-border-light dark:border-border-dark rounded-xl p-4 shadow-none opacity-80 cursor-grab">
+<div class="flex justify-between items-start mb-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500">Completed</span>
+<span class="material-icons-round text-green-500 text-lg">check_circle</span>
+</div>
+<h4 class="text-sm font-semibold mb-3 leading-tight text-slate-500 dark:text-slate-400 line-through">Optimize icon bundle size</h4>
+<div class="flex items-center justify-between mt-auto pt-2 border-t border-slate-50 dark:border-slate-800/50">
+<div class="flex items-center space-x-3 grayscale">
+<img alt="Avatar" class="w-6 h-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAK2VLgcFzOVKqmbbVx-BmXPJrBbv1vv5SuOXQZ9dP729D6n7wurido4jJezTo5Ut8h32bVffaqdin7KLV-Yl4W8x2aRBDM5GUb5wwfvteAvIocdcMqs9Y1KKpFUkws7mZ0_X42NL7XxYDiRj5EtBL3i9o7rq72BUz1P6yonjTBVMI-VTWqAdaOyGO9p33FyvUUYy8N4U_SXvsWRi6NiX_QnlfGdKwYGtvOR2_recg5jGBI4pcWYgPUnkKOZVIxWQa9MsNh0Dod4bY"/>
+<div class="flex items-center space-x-1 text-slate-400">
+<span class="material-icons-round text-xs">star_outline</span>
+<span class="text-xs font-medium">2</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">Oct 11</span>
+</div>
+</div>
+<button class="w-full py-2 border-2 border-dashed border-border-light dark:border-border-dark rounded-xl flex items-center justify-center space-x-2 text-slate-400 hover:text-primary hover:border-primary/50 transition-all text-sm font-medium">
+<span class="material-icons-round text-base">add</span>
+<span>Add task</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<button class="fixed bottom-6 right-6 lg:hidden w-14 h-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center">
+<span class="material-icons-round">add</span>
+</button>
+</main>
+<div class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-surface-dark text-slate-300 px-4 py-2 rounded-full border border-slate-800 flex items-center space-x-4 text-xs font-medium shadow-2xl z-50">
+<div class="flex items-center space-x-1">
+<span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">G</span>
+<span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">B</span>
+<span>Backlog</span>
+</div>
+<div class="w-px h-3 bg-slate-700"></div>
+<div class="flex items-center space-x-1">
+<span class="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">C</span>
+<span>Create Task</span>
+</div>
+<div class="w-px h-3 bg-slate-700"></div>
+<div class="flex items-center space-x-1 text-primary">
+<span class="bg-primary/20 px-1.5 py-0.5 rounded font-bold">⌘</span>
+<span class="bg-primary/20 px-1.5 py-0.5 rounded font-bold">K</span>
+<span>AgileAI Command</span>
+</div>
+</div>
+
+</body></html>
