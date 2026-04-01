@@ -54,4 +54,8 @@ taskSchema.pre('save', function(next) {
     this.isBlocked = this.blockedBy.length > 0;
   }
   this.lastActivityAt = new Date();
+  next();
+});
+
+const Task = mongoose.model('Task', taskSchema);
 export default Task;
