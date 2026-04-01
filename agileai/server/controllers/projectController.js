@@ -2,13 +2,16 @@ import Project from '../models/Project.model.js';
 import User from '../models/User.model.js';
 import { apiResponse } from '../utils/apiResponse.js';
 
+import mongoose from 'mongoose';
+
 export const getProjects = async (req, res) => {
   let query = {};
   
   // Admins see all projects. PMs and Devs only see projects they own or belong to.
   if (req.user.role !== 'admin') {
+    const userId = new mongoose.Types.ObjectId(req.user._id);
     query = {
-      $or: [{ owner: req.user._id }, { 'members.user': req.user._id }],
+      $or: [{ owner: userId }, { 'members.user': userId }],
     };
   }
 

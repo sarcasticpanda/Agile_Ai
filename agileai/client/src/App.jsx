@@ -18,8 +18,7 @@ import { MyTasksPage } from './pages/MyTasksPage';
 // PM Specific Imports
 import { PMLayout } from './components/layout/PMLayout';
 import { PmDashboardPage } from './pages/pm/PmDashboardPage';
-import { PmTeamPage } from './pages/pm/PmTeamPage';
-import { PmAnalyticsPage } from './pages/pm/PmAnalyticsPage';
+// Unified TeamPage and AnalyticsPage now handle PM roles via role-aware props/state
 
 import useAuthStore from './store/authStore';
 import { Toaster } from 'react-hot-toast';
@@ -99,8 +98,8 @@ function App() {
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="backlog" element={<BacklogPage />} />
           <Route path="board" element={<SharedBoardPage />} />
-          <Route path="analytics" element={<PmAnalyticsPage />} />
-          <Route path="team" element={<PmTeamPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="team" element={<TeamPage />} />
           <Route path="profile" element={<div className="p-10 text-center text-slate-500">Profile UI Constructing...</div>} />
         </Route>
 

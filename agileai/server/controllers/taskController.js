@@ -3,14 +3,17 @@ import Sprint from '../models/Sprint.model.js';
 import Project from '../models/Project.model.js';
 import { apiResponse } from '../utils/apiResponse.js';
 
+import mongoose from 'mongoose';
+
 export const getTasks = async (req, res) => {
   const { sprintId, projectId, assigneeId } = req.query;
 
   let query = {};
   
   if (req.user.role !== 'admin') {
+    const userId = new mongoose.Types.ObjectId(req.user._id);
     const userProjects = await Project.find({
-      $or: [{ owner: req.user._id }, { 'members.user': req.user._id }]
+      $or: [{ owner: userId }, { 'members.user': userId }]
     }).select('_id');
     const allowedIds = userProjects.map(p => p._id.toString());
 
