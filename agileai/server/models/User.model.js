@@ -26,6 +26,21 @@ const userSchema = new mongoose.Schema(
     avatar: {
       type: String,
     },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'suspended'],
+      default: 'active',
+    },
+    managedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -33,6 +48,19 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    // ML and Capacity Fields
+    orgId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+    },
+    capacityHoursPerWeek: {
+      type: Number,
+      default: 40,
+    },
+    hourlyRate: {
+      type: Number,
+      default: null, // Admin/PM visibility only
+    }
   },
   {
     timestamps: true,
@@ -41,7 +69,7 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);

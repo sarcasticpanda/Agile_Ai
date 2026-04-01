@@ -21,7 +21,18 @@ export const useTask = (projectId, sprintId) => {
 
   const updateTaskStatusMutation = useMutation({
     mutationFn: tasksApi.updateTaskStatus,
-    // Optimistic updates happen in the component or via socket, just refetch
+    // Fixed by @DataState — ensure Kanban board and burndown charts refresh
+    onSuccess: (data, variables) => {
+      const { sprintId } = variables; // Assuming tasksApi.updateTaskStatus was called with { id, status, sprintId }
+      // If sprintId isn't passed to the mutation, we might need it from the hook scope
+      const targetSprintId = sprintId || variables.sprintId;
+      
+      queryClient.invalidateQueries(['tasks', projectId]);
+      if (targetSprintId) {
+        queryClient.invalidateQueries(['tasks', projectId, targetSprintId]);
+        queryClient.invalidateQueries(['burndown', targetSprintId]);
+      }
+    },
     onSettled: () => {
       queryClient.invalidateQueries(['tasks', projectId]);
     },
@@ -29,8 +40,13 @@ export const useTask = (projectId, sprintId) => {
 
   const updateTaskMutation = useMutation({
     mutationFn: tasksApi.updateTask,
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries(['tasks', projectId]);
+      // Fixed by @DataState — refetch specific sprint/burndown if relevant
+      if (sprintId) {
+        queryClient.invalidateQueries(['tasks', projectId, sprintId]);
+        queryClient.invalidateQueries(['burndown', sprintId]);
+      }
     },
   });
 

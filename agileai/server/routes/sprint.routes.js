@@ -8,6 +8,7 @@ import {
   startSprint,
   completeSprint,
 } from '../controllers/sprintController.js';
+import { getSprintAutopsy } from '../controllers/autopsyController.js';
 import { protect, requireRole } from '../middleware/auth.middleware.js';
 
 const router = express.Router({ mergeParams: true });
@@ -25,5 +26,6 @@ router
 
 router.post('/:id/start', protect, requireRole('admin', 'pm'), startSprint);
 router.post('/:id/complete', protect, requireRole('admin', 'pm'), completeSprint);
+router.get('/:id/autopsy', protect, getSprintAutopsy);
 
 export default router;

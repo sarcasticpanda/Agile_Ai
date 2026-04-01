@@ -1,45 +1,36 @@
-// AI Proxy Service Placeholder
-// This file will connect to the Python FastAPI microservice in Phase 2
+// AI Proxy Service 
+// Connects to the Python FastAPI microservice
 import axios from 'axios';
 
-// Get AI Service URL from env, fallback to default Phase 2 expected port
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://ai-service:8001';
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000/api/ai';
 
-export const predictRisk = async (sprintId) => {
-  // Phase 1 Mock Data (Phase 2 will replace with Axios call to Python Service)
-  // const response = await axios.post(`${AI_SERVICE_URL}/predict-risk`, { sprintId });
-  // return response.data;
-
-  return {
-    riskScore: 45,
-    riskLevel: 'medium',
-    confidence: 0.85,
-    factors: [
-      { name: 'Developer Workload', impact: 15, direction: 'negative' },
-      { name: 'Historical Velocity', impact: 10, direction: 'positive' }
-    ],
-    generatedAt: new Date()
-  };
+export const predictRisk = async (sprintData) => {
+  try {
+    const response = await axios.post(`${AI_SERVICE_URL}/predict-risk`, sprintData);
+    return response.data;
+  } catch (error) {
+    console.error('Error hitting AI Service for predictRisk:', error.message);
+    // Fallback or re-throw
+    throw new Error('AI Service unavailable');
+  }
 };
 
-export const estimateEffort = async (taskId) => {
-  // Phase 1 Mock Data
-  return {
-    predictedHours: 8,
-    confidence: 0.9,
-    generatedAt: new Date()
-  };
+export const estimateEffort = async (taskData) => {
+  try {
+    const response = await axios.post(`${AI_SERVICE_URL}/estimate-effort`, taskData);
+    return response.data;
+  } catch (error) {
+    console.error('Error hitting AI Service for estimateEffort:', error.message);
+    throw new Error('AI Service unavailable');
+  }
 };
 
-export const getInsights = async (sprintId) => {
-  // Phase 1 Mock Data
-  return {
-    insights: [
-      "The team is on track to complete the sprint successfully.",
-      "Consider reassigning one issue from Junior Dev to balance workload."
-    ],
-    recommendations: [
-      "Prioritize task T-402 as it's blocking 2 others."
-    ]
-  };
+export const getInsights = async (sprintData) => {
+  try {
+    const response = await axios.post(`${AI_SERVICE_URL}/insights`, sprintData);
+    return response.data;
+  } catch (error) {
+    console.error('Error hitting AI Service for insights:', error.message);
+    throw new Error('AI Service unavailable');
+  }
 };

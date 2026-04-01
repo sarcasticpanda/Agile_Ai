@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Bell, Search, Plus } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
+import useProjectStore from '../../store/projectStore';
+import CreateIssueModal from '../modals/CreateIssueModal';
 
 export const Navbar = ({ title }) => {
   const { user } = useAuthStore();
+  const { activeProject } = useProjectStore();
+  const [showIssueModal, setShowIssueModal] = useState(false);
 
   return (
     <header className="h-16 border-b border-border-light dark:border-border-dark bg-card-light/50 dark:bg-card-dark/50 backdrop-blur-md flex items-center justify-between px-8 z-10 transition-colors duration-200">
@@ -24,16 +28,31 @@ export const Navbar = ({ title }) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm hover:shadow-md active:scale-95">
-            <Plus size={14} /> New Issue
-          </button>
-          
-          <button className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative">
+          {activeProject && (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'pm') && (
+            <button
+              onClick={() => setShowIssueModal(true)}
+              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm hover:shadow-md active:scale-95 flex-shrink-0"
+            >
+              <Plus size={14} /> New Issue
+            </button>
+          )}
+
+          <button
+            onClick={() => alert('No new notifications yet')}
+            className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative"
+          >
             <Bell size={20} />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-card-dark"></span>
           </button>
         </div>
       </div>
+
+      {showIssueModal && activeProject && (
+        <CreateIssueModal 
+          isOpen={showIssueModal} 
+          onClose={() => setShowIssueModal(false)}
+          projectId={activeProject._id}
+        />
+      )}
     </header>
   );
 };

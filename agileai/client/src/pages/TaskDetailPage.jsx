@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, MessageSquare, Clock, ArrowRight, Activity, Zap } from 'lucide-react';
 import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { getTaskPriorityColor, getTaskStatusColor } from '../utils/statusColors';
 import { formatDate, formatTimeAgo } from '../utils/dateUtils';
 import * as tasksApi from '../api/tasks.api';
+import { toast } from '../components/ui/Toast';
 
 export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const { data: response, isLoading } = useQuery({
@@ -16,6 +17,19 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   });
 
   const task = response?.data;
+  const queryClient = useQueryClient();
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (newStatus) => tasksApi.updateTask(taskId, { status: newStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['task', taskId]);
+      if (projectId) {
+        queryClient.invalidateQueries(['tasks', projectId]);
+      }
+      toast.success('Task status updated');
+    },
+    onError: () => toast.error('Failed to update status'),
+  });
 
   // Handle escape key
   useEffect(() => {
@@ -47,8 +61,8 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-slate-500 tracking-widest">{task.projectId ? 'AGL' : 'PRJ'}-{task._id.substring(task._id.length - 4)}</span>
-                  <Badge className="uppercase tracking-wider text-[10px]">{task.type}</Badge>
+                  <span className="text-sm font-bold text-slate-500 tracking-widest">AGL-{task._id.substring(task._id.length - 4)}</span>
+                  <Badge className="uppercase tracking-wider text-[10px]">{task.issueType || task.type || 'Task'}</Badge>
                 </div>
                 <div className="flex items-center gap-2">
                    <Button variant="ghost" size="icon" onClick={onClose}>
@@ -62,9 +76,17 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                 <h1 className="text-2xl font-bold text-slate-900 mb-6">{task.title}</h1>
                 
                 <div className="flex items-center gap-4 mb-8">
-                  <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${getTaskStatusColor(task.status)}`}>
-                    {task.status}
-                  </span>
+                  <select 
+                    value={task.status}
+                    onChange={(e) => updateStatusMutation.mutate(e.target.value)}
+                    disabled={updateStatusMutation.isLoading}
+                    className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider outline-none cursor-pointer border border-transparent hover:border-slate-300 transition-colors ${getTaskStatusColor(task.status)}`}
+                  >
+                    <option value="todo">TO DO</option>
+                    <option value="inprogress">IN PROGRESS</option>
+                    <option value="review">IN REVIEW</option>
+                    <option value="done">DONE</option>
+                  </select>
                   <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${getTaskPriorityColor(task.priority)}`}>
                     {task.priority} Priority
                   </span>
@@ -85,18 +107,18 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                 <div className="grid grid-cols-2 gap-8 mb-10">
                   <div>
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Assignee</h3>
-                    <div className="flex items-center gap-3">
-                      <Avatar src={task.assignee?.avatar} fallback={task.assignee?.name || 'UA'} size="sm" />
-                      <span className="text-sm font-medium text-slate-900">{task.assignee?.name || 'Unassigned'}</span>
-                    </div>
+                     <div className="flex items-center gap-3">
+                       <Avatar src={task.assigneeId?.avatar} fallback={task.assigneeId?.name || 'UA'} size="sm" />
+                       <span className="text-sm font-medium text-slate-900">{task.assigneeId?.name || 'Unassigned'}</span>
+                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Reporter</h3>
-                    <div className="flex items-center gap-3">
-                      <Avatar src={task.reporter?.avatar} fallback={task.reporter?.name || 'UA'} size="sm" />
-                      <span className="text-sm font-medium text-slate-900">{task.reporter?.name || 'System Generated'}</span>
-                    </div>
-                  </div>
+                   <div>
+                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Reporter</h3>
+                     <div className="flex items-center gap-3">
+                       <Avatar src={task.reporterId?.avatar} fallback={task.reporterId?.name || 'UA'} size="sm" />
+                       <span className="text-sm font-medium text-slate-900">{task.reporterId?.name || 'System'}</span>
+                     </div>
+                   </div>
                 </div>
 
                 {/* Activity / Comments */}

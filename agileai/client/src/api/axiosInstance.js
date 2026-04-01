@@ -2,7 +2,7 @@ import axios from 'axios';
 import useAuthStore from '../store/authStore';
 
 const axiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api', // Fixed by @DataState — Port 5001
   headers: {
     'Content-Type': 'application/json',
   },
@@ -22,28 +22,10 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
-
-    // Handle 401 Unauthorized globally
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      try {
-        const refreshToken = useAuthStore.getState().refreshToken;
-        if (refreshToken) {
-          const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth/refresh`, { refreshToken });
-          
-          if (res.data.success) {
-            useAuthStore.getState().setToken(res.data.data.token);
-            originalRequest.headers.Authorization = `Bearer ${res.data.data.token}`;
-            return axiosInstance(originalRequest);
-          }
-        }
-      } catch (refreshErr) {
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
-      }
-      
-      useAuthStore.getState().logout();
+    // Fixed by @DataState â€” handle 401 globally by logging out, except for login route
+    if (error.response?.status === 401 && !error.config.url.includes('/auth/login')) {
+      const { logout } = useAuthStore.getState();
+      logout();
       window.location.href = '/login';
     }
     return Promise.reject(error);

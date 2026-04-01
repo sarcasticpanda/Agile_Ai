@@ -4,17 +4,35 @@ import Project from '../models/Project.model.js';
 import { apiResponse } from '../utils/apiResponse.js';
 
 export const getTasks = async (req, res) => {
-  const { sprintId, projectId } = req.query;
+  const { sprintId, projectId, assigneeId } = req.query;
 
   let query = {};
-  if (sprintId) {
-    query.sprint = sprintId === 'backlog' ? null : sprintId;
+  
+  if (req.user.role !== 'admin') {
+    const userProjects = await Project.find({
+      $or: [{ owner: req.user._id }, { 'members.user': req.user._id }]
+    }).select('_id');
+    const allowedIds = userProjects.map(p => p._id.toString());
+
+    if (projectId && !allowedIds.includes(projectId)) {
+      return apiResponse(res, 403, false, null, 'Access denied to tasks in this project');
+    }
+    
+    // Only fetch tasks within allowed projects
+    query.projectId = projectId ? projectId : { $in: allowedIds };
+  } else if (projectId) {
+    query.projectId = projectId;
   }
-  if (projectId) query.project = projectId;
+
+  if (sprintId) {
+    query.sprintId = sprintId === 'backlog' ? null : sprintId;
+  }
+  
+  if (assigneeId) query.assigneeId = assigneeId;
 
   const tasks = await Task.find(query)
-    .populate('assignee', 'name avatar')
-    .populate('reporter', 'name avatar')
+    .populate('assigneeId', 'name avatar')
+    .populate('reporterId', 'name avatar')
     .sort({ order: 1, createdAt: -1 });
 
   apiResponse(res, 200, true, tasks, 'Tasks fetched successfully');
@@ -23,11 +41,11 @@ export const getTasks = async (req, res) => {
 export const createTask = async (req, res) => {
   const task = await Task.create({
     ...req.body,
-    reporter: req.user._id,
+    reporterId: req.user._id,
   });
 
-  if (task.sprint) {
-    await Sprint.findByIdAndUpdate(task.sprint, { $push: { tasks: task._id } });
+  if (task.sprintId) {
+    await Sprint.findByIdAndUpdate(task.sprintId, { $push: { tasks: task._id } });
   }
 
   apiResponse(res, 201, true, task, 'Task created successfully');
@@ -35,8 +53,8 @@ export const createTask = async (req, res) => {
 
 export const getTaskById = async (req, res) => {
   const task = await Task.findById(req.params.id)
-    .populate('assignee', 'name avatar')
-    .populate('reporter', 'name avatar')
+    .populate('assigneeId', 'name avatar')
+    .populate('reporterId', 'name avatar')
     .populate('comments.user', 'name avatar')
     .populate('worklogs.user', 'name avatar');
 
@@ -52,7 +70,7 @@ export const updateTask = async (req, res) => {
     req.params.id,
     { $set: req.body },
     { new: true }
-  ).populate('assignee', 'name avatar');
+  ).populate('assigneeId', 'name avatar');
 
   if (!task) {
     return apiResponse(res, 404, false, null, 'Task not found');
@@ -60,7 +78,7 @@ export const updateTask = async (req, res) => {
 
   const io = req.app.get('io');
   if (io) {
-    io.to(`project:${task.project}`).emit('task:updated', task);
+    io.to(`project:${task.projectId}`).emit('task:updated', task);
   }
 
   apiResponse(res, 200, true, task, 'Task updated successfully');
@@ -73,8 +91,8 @@ export const deleteTask = async (req, res) => {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  if (task.sprint) {
-    await Sprint.findByIdAndUpdate(task.sprint, { $pull: { tasks: task._id } });
+  if (task.sprintId) {
+    await Sprint.findByIdAndUpdate(task.sprintId, { $pull: { tasks: task._id } });
   }
 
   await Task.findByIdAndDelete(req.params.id);
@@ -95,7 +113,7 @@ export const updateTaskStatus = async (req, res) => {
 
   const io = req.app.get('io');
   if (io) {
-    io.to(`project:${task.project}`).emit('task:moved', task);
+    io.to(`project:${task.projectId}`).emit('task:moved', task);
   }
 
   apiResponse(res, 200, true, task, 'Task status updated');
@@ -108,10 +126,10 @@ export const updateTaskSprint = async (req, res) => {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  const oldSprint = task.sprint;
+  const oldSprint = task.sprintId;
   const newSprint = req.body.sprintId;
 
-  task.sprint = newSprint || null;
+  task.sprintId = newSprint || null;
   await task.save();
 
   if (oldSprint) {

@@ -20,7 +20,12 @@ export const AuthPage = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard');
+      const userState = useAuthStore.getState().user;
+      if (userState?.role === 'pm') {
+        navigate('/pm/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     }
   }, [isAuthenticated, navigate]);
 
@@ -44,9 +49,21 @@ export const AuthPage = () => {
       const data = response.data;
 
       if (data.success && data.data) {
-        const { token, refreshToken, ...userData } = data.data;
-        storeLogin(userData, token, refreshToken);
-        navigate('/dashboard');
+        if (!isLogin && data.data.status === 'pending') {
+          // Block login for newly registered pending users
+          setError('');
+          import('react-hot-toast').then(({ toast }) => toast.success('Registration successful! Your account is pending admin approval.'));
+          setIsLogin(true); // Switch back to login view
+          setFormData({ ...formData, password: '' }); // Clear password
+        } else {
+          const { token, refreshToken, ...userData } = data.data;
+          storeLogin(userData, token, refreshToken);
+          if (userData.role === 'pm') {
+            navigate('/pm/dashboard');
+          } else {
+            navigate('/dashboard');
+          }
+        }
       } else {
         setError(data.message || 'Something went wrong');
       }
@@ -233,7 +250,7 @@ export const AuthPage = () => {
                 onClick={() => {
                   setIsLogin(!isLogin);
                   setError('');
-                  setFormData({ name: '', email: '', password: '', role: 'Developer' });
+                  setFormData({ name: '', email: '', password: '', role: 'developer' });
                 }}
               >
                 {isLogin ? 'Register now' : 'Login instead'}

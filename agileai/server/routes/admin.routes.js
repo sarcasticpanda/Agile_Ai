@@ -4,6 +4,7 @@ import {
   updateUserRole,
   deleteUser,
   getStats,
+  getLogs
 } from '../controllers/adminController.js';
 import { protect, requireRole } from '../middleware/auth.middleware.js';
 
@@ -16,5 +17,6 @@ router.get('/users', getUsers);
 router.patch('/users/:id', updateUserRole);
 router.delete('/users/:id', deleteUser);
 router.get('/stats', getStats);
+router.get('/logs', getLogs);
 
 export default router;

@@ -1,7 +1,8 @@
 import axiosInstance from './axiosInstance';
 
 export const getSprints = async (projectId) => {
-  const response = await axiosInstance.get(`/sprints?projectId=${projectId}`);
+  const url = projectId ? `/sprints?projectId=${projectId}` : `/sprints`;
+  const response = await axiosInstance.get(url);
   return response.data;
 };
 

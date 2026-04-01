@@ -8,22 +8,33 @@ import {
   Settings, 
   Users,
   Bolt,
-  LogOut
+  LogOut,
+  ShieldCheck
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 export const Sidebar = () => {
   const { user, logout } = useAuthStore();
+  
+  // Fixed by @Frontend — role-based UI logic
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPM = user?.role?.toLowerCase() === 'pm';
+  const isDev = user?.role?.toLowerCase() === 'developer';
 
   const navItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { name: 'Issues', icon: CheckCircle2, path: '/issues' },
-    { name: 'Projects', icon: Layers, path: '/projects' },
-    { name: 'Analytics', icon: BarChart3, path: '/analytics' },
-    { name: 'Team', icon: Users, path: '/team' },
+    { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', show: true },
+    { name: 'My Tasks', icon: CheckCircle2, path: '/my-tasks', show: true },
+    { name: 'Projects', icon: Layers, path: '/projects', show: true },
+    { name: 'Analytics', icon: BarChart3, path: '/analytics', show: !isDev },     
+    { name: 'Team', icon: Users, path: '/team', show: !isDev },
+    { name: 'Admin Panel', icon: ShieldCheck, path: '/admin', show: isAdmin },
   ];
 
+  const filteredNavItems = navItems.filter(item => item.show);
+
   const handleLogout = () => {
+    localStorage.removeItem('auth-storage');
+    localStorage.removeItem('agileai-project-storage');
     logout();
     window.location.href = '/login';
   };
@@ -35,7 +46,7 @@ export const Sidebar = () => {
       </div>
       
       <nav className="flex flex-col gap-6 flex-1">
-        {navItems.map((item) => (
+        {filteredNavItems.map((item) => (
           <NavLink
             key={item.name}
             to={item.path}

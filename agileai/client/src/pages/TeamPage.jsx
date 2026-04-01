@@ -7,10 +7,12 @@ import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { UserPlus, Mail, ShieldAlert } from 'lucide-react';
+import useAuthStore from '../store/authStore';
 
 export const TeamPage = () => {
   const { projectId } = useParams();
-  
+  const { user } = useAuthStore();
+
   const { data: response, isLoading } = useQuery({
     queryKey: ['projectMembers', projectId],
     queryFn: () => projectsApi.getProjectMembers(projectId),

@@ -6,10 +6,10 @@ import { MoreHorizontal } from 'lucide-react';
 
 const getColumnColor = (id) => {
   switch (id) {
-    case 'To Do': return 'bg-slate-400';
-    case 'In Progress': return 'bg-primary';
-    case 'In Review': return 'bg-amber-500';
-    case 'Done': return 'bg-green-500';
+    case 'todo': return 'bg-slate-400'; // Fixed by GSD Task 6: match enum id not display name
+    case 'inprogress': return 'bg-primary';
+    case 'review': return 'bg-amber-500';
+    case 'done': return 'bg-green-500';
     default: return 'bg-slate-400';
   }
 };

@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import 'express-async-errors';
+import mongoSanitize from 'express-mongo-sanitize';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,6 +22,8 @@ import aiRoutes from './routes/ai.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import agentRoutes from './routes/agent.routes.js';
+import riskRoutes from './routes/risk.routes.js';
+import pmRoutes from './routes/pm.routes.js';
 
 // Middlewares & Services
 import { errorHandler, notFound } from './middleware/errorHandler.middleware.js';
@@ -58,6 +61,7 @@ initializeSockets(io);
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(mongoSanitize());
 app.use(cors());
 app.use(helmet());
 app.use(morgan('dev'));
@@ -90,9 +94,13 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 // Phase 3 Stub Route
 app.use('/api/agent', agentRoutes);
+// AI Risk Engine Routes
+app.use('/api/risk', riskRoutes);
+// PM Team Routes
+app.use('/api/pm', pmRoutes);
 
 app.get('/', (req, res) => {
-  res.send('AgileAI API Phase 1 is running...');
+  res.send('AgileAI API Phase 2 is running — AI Risk Engine active 🚀');
 });
 
 // Error handlers
