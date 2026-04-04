@@ -41,6 +41,19 @@ export const createDeveloper = async (req, res) => {
   }
 };
 
+export const getFreePool = async (req, res) => {
+  try {
+    const freeDevelopers = await User.find({
+      role: 'developer',
+      status: 'active',
+      managedBy: null
+    }).select('-password');
+    apiResponse(res, 200, true, freeDevelopers, 'Fetched free pool successfully');
+  } catch (error) {
+    apiResponse(res, 500, false, null, 'Server error fetching free pool');
+  }
+};
+
 export const getMyDevelopers = async (req, res) => {
   try {
     const developers = await User.find({
@@ -49,9 +62,15 @@ export const getMyDevelopers = async (req, res) => {
       managedBy: req.user._id
     }).select('-password');
     
-    // Here we should inject tasks count and current sprint. 
-    // But keeping it lightweight for now, we attach baseline user.
-    apiResponse(res, 200, true, developers, 'Fetched developers successfully');
+    // Enrich with actual project count per developer
+    const enriched = await Promise.all(developers.map(async (dev) => {
+      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      const devObj = dev.toObject();
+      devObj.projectCount = projectCount;
+      return devObj;
+    }));
+
+    apiResponse(res, 200, true, enriched, 'Fetched developers successfully');
   } catch (error) {
     apiResponse(res, 500, false, null, 'Server error fetching developers');
   }
@@ -123,5 +142,40 @@ export const approveDeveloper = async (req, res) => {
     apiResponse(res, 200, true, { user: developer }, 'Developer approved successfully');
   } catch (error) {
     apiResponse(res, 500, false, null, 'Server error approving developer');
+  }
+};
+
+export const claimDeveloper = async (req, res) => {
+  try {
+    const developer = await User.findById(req.params.id);
+    if (!developer) return apiResponse(res, 404, false, null, 'Developer not found');
+
+    if (developer.role !== 'developer') {
+      return apiResponse(res, 400, false, null, 'Can only claim developers');
+    }
+    if (developer.status !== 'active') {
+      return apiResponse(res, 400, false, null, 'Developer must be active (admin-approved) before claiming');
+    }
+    if (developer.managedBy && developer.managedBy.toString() !== req.user._id.toString()) {
+      return apiResponse(res, 400, false, null, 'Developer is already assigned to another PM');
+    }
+
+    developer.managedBy = req.user._id;
+    await developer.save();
+
+    await Notification.create({
+      user: developer._id,
+      title: 'Team Assignment',
+      message: `You have been assigned to ${req.user.name}'s team.`,
+      type: 'user_assigned',
+      read: false
+    });
+
+    const enrichedDev = developer.toObject();
+    enrichedDev.projectCount = await Project.countDocuments({ 'members.user': developer._id });
+
+    apiResponse(res, 200, true, enrichedDev, 'Developer claimed successfully');
+  } catch (error) {
+    apiResponse(res, 500, false, null, 'Server error claiming developer');
   }
 };

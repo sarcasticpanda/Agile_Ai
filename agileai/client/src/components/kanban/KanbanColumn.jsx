@@ -22,7 +22,7 @@ export const KanbanColumn = ({ column, tasks, onTaskClick }) => {
   const columnColor = getColumnColor(column.id);
 
   return (
-    <div className="w-80 flex flex-col space-y-4">
+    <div className="flex-1 min-w-[260px] flex flex-col space-y-4">
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center space-x-2">
           <div className={`w-2.5 h-2.5 rounded-full ${columnColor}`}></div>

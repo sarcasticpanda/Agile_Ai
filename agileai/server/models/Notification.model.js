@@ -16,6 +16,8 @@ const notificationSchema = new mongoose.Schema(
         'comment_added',
         'risk_alert',
         'mentioned',
+        'user_assigned',
+        'user_created',
       ],
       required: true,
     },

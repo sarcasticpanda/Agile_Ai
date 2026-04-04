@@ -142,9 +142,9 @@ export const completeSprint = async (req, res) => {
   await sprint.save();
 
   // Move incomplete tasks back to backlog
-  const incompleteTasks = sprint.tasks.filter((task) => task.status.toLowerCase() !== 'done');
+  const incompleteTasks = sprint.tasks.filter((task) => task.status?.toLowerCase() !== 'done');
   for (let task of incompleteTasks) {
-    await Task.findByIdAndUpdate(task._id, { sprintId: null });
+    await Task.findByIdAndUpdate(task._id, { sprint: null });
   }
 
   const io = req.app.get('io');

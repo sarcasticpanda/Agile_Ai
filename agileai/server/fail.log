@@ -1,0 +1,5 @@
+Error: Path `reporter` is required., Path `project` is required., `Medium` is not a valid enum value for path `priority`.
+Stack: Error: Path `reporter` is required., Path `project` is required., `Medium` is not a valid enum value for path `priority`.
+    at request (file:///C:/Users/rishi/Downloads/agile/Agile_Ai/agileai/server/e2e_test_phase_3.mjs:21:22)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async run (file:///C:/Users/rishi/Downloads/agile/Agile_Ai/agileai/server/e2e_test_phase_3.mjs:94:9)

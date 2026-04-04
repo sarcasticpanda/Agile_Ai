@@ -12,6 +12,7 @@ import * as projectsApi from '../api/projects.api';
 import { formatDate } from '../utils/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import useUiStore from '../store/uiStore';
+import useProjectStore from '../store/projectStore';
 import useAuthStore from '../store/authStore';
 import { FullPageSpinner } from '../components/ui/Spinner';
 
@@ -23,7 +24,8 @@ export const ProjectsPage = () => {
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { setActiveProject } = useUiStore();
+  const { setActiveProject: setUiProject } = useUiStore();
+  const { setActiveProject: setProjectStore } = useProjectStore();
   
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
@@ -76,9 +78,11 @@ export const ProjectsPage = () => {
     addMemberMutation.mutate({ id: manageMembersProject._id, data: { email, role } });
   };
 
-  const handleProjectClick = (projectId) => {
-    setActiveProject(projectId);
-    navigate(`/projects/${projectId}/backlog`);
+  const handleProjectClick = (project) => {
+    setUiProject(project._id);
+    setProjectStore(project); // Store full object so PMLayout can read .title
+    const prefix = isPM ? '/pm' : '';
+    navigate(`${prefix}/projects/${project._id}/backlog`);
   };
 
   if (isLoading) return <FullPageSpinner />;
@@ -123,7 +127,7 @@ export const ProjectsPage = () => {
           {projects.map((project) => (
             <div 
               key={project._id}
-              onClick={() => handleProjectClick(project._id)}
+              onClick={() => handleProjectClick(project)}
               className={`group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:shadow-md hover:border-indigo-300 cursor-pointer ${viewMode === 'list' ? 'flex items-center p-4' : 'flex flex-col'}`}
             >
               {viewMode === 'grid' && <div className="h-2 w-full" style={{ backgroundColor: project.color || '#4f46e5' }} />}

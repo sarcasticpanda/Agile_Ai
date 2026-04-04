@@ -190,7 +190,7 @@ export const TeamPage = () => {
             <Filter size={18} className="mr-2" /> Filters
           </Button>
           {(isAdmin || isPM) && (
-            <Button className="shadow-lg shadow-primary/20">
+            <Button className="shadow-lg shadow-primary/20" onClick={() => setIsAddModalOpen(true)}>
               <UserPlus size={18} className="mr-2" /> Invite Developer
             </Button>
           )}
@@ -290,22 +290,29 @@ export const TeamPage = () => {
                     <CheckCircle2 size={14} /> Active
                   </div>
                 </div>
-                <div className="bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl text-center">
-                   <span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Assigned</span>
-                   <div className="text-xs font-bold text-slate-700 dark:text-slate-300">3 Projects</div>
+                <div className="bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl flex items-center justify-around text-center">
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Projects</span>
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{member.projectCount ?? 0}</div>
+                  </div>
+                  <div className="w-px h-6 bg-slate-200 dark:bg-zinc-700"></div>
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-amber-500/80 block mb-1">Sprints</span>
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{member.sprintCount ?? 0}</div>
+                  </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl overflow-hidden shadow-sm">
+      <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-zinc-900/50 border-b border-slate-200 dark:border-border-dark">
                 <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400">Developer</th>
-                <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400">Alignment</th>
-                <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400">Expertise</th>
+                <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400">Role</th>
+                <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400">Add to Project</th>
                 <th className="py-5 px-8 text-xs uppercase tracking-wider font-black text-slate-400 text-right">Action</th>
               </tr>
             </thead>
@@ -315,46 +322,29 @@ export const TeamPage = () => {
               ) : filteredList(talentPool).length === 0 ? (
                 <tr><td colSpan={4} className="p-20 text-center text-slate-400">No unassigned developers found in global pool.</td></tr>
               ) : filteredList(talentPool).map(talent => (
-                <tr key={talent._id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/20 transition-all group text-slate-800 dark:text-white">
-                  <td className="py-5 px-8">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black text-sm group-hover:scale-110 transition-transform">
-                        {getInitials(talent.name)}
-                      </div>
-                      <div>
-                        <div className="font-black group-hover:text-primary transition-colors">{talent.name}</div>
-                        <div className="text-xs text-slate-400 flex items-center gap-1.5 mt-1 font-medium">
-                          <Mail size={12} /> {talent.email}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-5 px-8">
-                    <div className="flex items-center gap-2 font-bold text-slate-700 dark:text-slate-300">
-                       <Award size={16} className="text-amber-500" />
-                       <span className="text-sm capitalize">{talent.role || 'Senior Engineer'}</span>
-                    </div>
-                  </td>
-                  <td className="py-5 px-8">
-                    <div className="flex flex-wrap gap-2">
-                      {(talent.skills || ['Fullstack', 'React', 'Node']).slice(0, 3).map(skill => (
-                        <span key={skill} className="px-2 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 rounded-md text-[10px] font-bold uppercase tracking-widest">
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-5 px-8 text-right">
-                    <Button 
-                      size="sm"
-                      onClick={() => claimMutation.mutate(talent._id)}
-                      disabled={claimMutation.isPending}
-                      className="font-black text-xs uppercase tracking-widest"
-                    >
-                      {claimMutation.isPending ? 'Assigning...' : 'Assign to Team'}
-                    </Button>
-                  </td>
-                </tr>
+                <TalentPoolRow 
+                  key={talent._id} 
+                  talent={talent} 
+                  onClaim={(id, projectId) => {
+                    claimMutation.mutate(id, {
+                      onSuccess: () => {
+                        // If project selected, also add to that project
+                        if (projectId) {
+                          import('../api/projects.api').then(api => {
+                            api.addProjectMember({ id: projectId, data: { email: talent.email, role: 'developer' }})
+                              .then(() => {
+                                toast.success(`Added to project and team!`);
+                                queryClient.invalidateQueries(['projects']);
+                              })
+                              .catch(() => toast.error('Claimed but failed to add to project'));
+                          });
+                        }
+                      }
+                    });
+                  }}
+                  isLoading={claimMutation.isPending}
+                  getInitials={getInitials}
+                />
               ))}
             </tbody>
           </table>
@@ -377,5 +367,62 @@ export const TeamPage = () => {
         />
       )}
     </PageShell>
+  );
+};
+
+// Inline component: TalentPoolRow with project picker
+const TalentPoolRow = ({ talent, onClaim, isLoading, getInitials }) => {
+  const [selectedProjectId, setSelectedProjectId] = React.useState('');
+  const { data: projectsRes } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => import('../api/projects.api').then(api => api.getProjects()),
+    staleTime: 30000,
+  });
+  const projects = projectsRes?.data || [];
+
+  return (
+    <tr className="hover:bg-slate-50 dark:hover:bg-zinc-900/20 transition-all group text-slate-800 dark:text-white">
+      <td className="py-5 px-8">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black text-sm group-hover:scale-110 transition-transform">
+            {getInitials(talent.name)}
+          </div>
+          <div>
+            <div className="font-black group-hover:text-primary transition-colors">{talent.name}</div>
+            <div className="text-xs text-slate-400 flex items-center gap-1.5 mt-1 font-medium">
+              <Mail size={12} /> {talent.email}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="py-5 px-8">
+        <div className="flex items-center gap-2 font-bold text-slate-700 dark:text-slate-300">
+           <Award size={16} className="text-amber-500" />
+           <span className="text-sm capitalize">{talent.role || 'Developer'}</span>
+        </div>
+      </td>
+      <td className="py-5 px-8">
+        <select 
+          value={selectedProjectId}
+          onChange={(e) => setSelectedProjectId(e.target.value)}
+          className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg py-2 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+        >
+          <option value="">Team only (no project)</option>
+          {projects.map(p => (
+            <option key={p._id} value={p._id}>{p.title}</option>
+          ))}
+        </select>
+      </td>
+      <td className="py-5 px-8 text-right">
+        <Button 
+          size="sm"
+          onClick={() => onClaim(talent._id, selectedProjectId || null)}
+          disabled={isLoading}
+          className="font-black text-xs uppercase tracking-widest"
+        >
+          {isLoading ? 'Assigning...' : 'Claim & Assign'}
+        </Button>
+      </td>
+    </tr>
   );
 };

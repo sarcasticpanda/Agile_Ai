@@ -75,7 +75,7 @@ export const DashboardPage = () => {
 
   const stats = [
     { 
-      title: isDev ? 'My Projects' : 'Projects', 
+      title: isDev ? 'My Projects' : isAdmin ? 'All Projects' : 'Projects', 
       value: String(projects.length), 
       status: projects.length > 0 ? 'Active' : 'None', 
       icon: Activity, 
@@ -300,8 +300,8 @@ export const DashboardPage = () => {
               </div>
               <div className="p-5 flex flex-col gap-3">
                 {[
-                  { label: 'My Projects', path: '/projects', icon: Activity },
-                  { label: 'Team Members', path: '/team', icon: Calendar },
+                  { label: isAdmin ? 'All Projects' : 'My Projects', path: '/projects', icon: Activity },
+                  { label: isAdmin ? 'Manage PMs & Devs' : 'Team Members', path: isAdmin ? '/admin' : '/team', icon: Calendar },
                   { label: 'Analytics & Reports', path: '/analytics', icon: TrendingUp },
                   { label: 'Profile Settings', path: '/profile', icon: CheckCircle2 },
                 ].map(link => (

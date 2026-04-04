@@ -10,7 +10,7 @@ export const AddMemberModal = ({ isOpen, onClose, projectId }) => {
   const queryClient = useQueryClient();
 
   const addMemberMutation = useMutation({
-    mutationFn: (data) => projectsApi.addProjectMember(projectId, data),
+    mutationFn: (data) => projectsApi.addProjectMember({ id: projectId, data }),
     onSuccess: () => {
       toast.success('Member added successfully!');
       queryClient.invalidateQueries({ queryKey: ['projectMembers', projectId] });

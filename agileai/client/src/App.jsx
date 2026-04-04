@@ -97,6 +97,9 @@ function App() {
           <Route path="dashboard" element={<PmDashboardPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="backlog" element={<BacklogPage />} />
+          <Route path="projects/:projectId/backlog" element={<BacklogPage />} />
+          <Route path="projects/:projectId/board" element={<SharedBoardPage />} />
+          <Route path="projects/:projectId/sprints/:sprintId" element={<SharedBoardPage />} />
           <Route path="board" element={<SharedBoardPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="team" element={<TeamPage />} />

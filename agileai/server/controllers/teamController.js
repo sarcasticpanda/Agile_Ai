@@ -1,5 +1,8 @@
 import User from '../models/User.model.js';
 import AuditLog from '../models/AuditLog.model.js';
+import Project from '../models/Project.model.js';
+import Task from '../models/Task.model.js';
+import Sprint from '../models/Sprint.model.js';
 
 // @desc    Get current PM's team roster
 // @route   GET /api/v1/team/roster
@@ -12,9 +15,23 @@ export const getMyRoster = async (req, res) => {
       managedBy: req.user._id
     }).select('-password');
 
+    const enrichedDevs = await Promise.all(developers.map(async (dev) => {
+      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      // Number of sprints where the developer has at least one task assigned
+      const assignedTasks = await Task.find({ assignee: dev._id });
+      const sprintIds = [...new Set(assignedTasks.map(t => t.sprint?.toString()).filter(Boolean))];
+      const sprintCount = sprintIds.length;
+
+      return {
+        ...dev.toObject(),
+        projectCount,
+        sprintCount
+      };
+    }));
+
     res.status(200).json({
       success: true,
-      data: developers
+      data: enrichedDevs
     });
   } catch (error) {
     console.error(error);
@@ -33,9 +50,22 @@ export const getFreePool = async (req, res) => {
       managedBy: null
     }).select('-password');
 
+    const enrichedPool = await Promise.all(freeDevelopers.map(async (dev) => {
+      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      const assignedTasks = await Task.find({ assignee: dev._id });
+      const sprintIds = [...new Set(assignedTasks.map(t => t.sprint?.toString()).filter(Boolean))];
+      const sprintCount = sprintIds.length;
+
+      return {
+        ...dev.toObject(),
+        projectCount,
+        sprintCount
+      };
+    }));
+
     res.status(200).json({
       success: true,
-      data: freeDevelopers
+      data: enrichedPool
     });
   } catch (error) {
     console.error(error);

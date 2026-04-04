@@ -1,32 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Shield, ShieldCheck, Target, CheckCircle2, ChevronRight, Activity, Zap } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { addProjectMember, removeProjectMember } from '../../api/projects.api';
 import useProjectStore from '../../store/projectStore';
 
 const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
-  const { activeProject } = useProjectStore();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  
+  // Fetch PM's projects to populate dropdown
+  const { data: projectsRes } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => import('../../api/projects.api').then(api => api.getProjects()),
+  });
+  const projects = projectsRes?.data || [];
+  
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const [inProject, setInProject] = useState(false);
 
   useEffect(() => {
-    if (!activeProject || !developer) return;
-    const isMember = activeProject.members?.some(m => m.user._id === developer._id || m.user === developer._id);
-    setInProject(isMember);
-  }, [activeProject, developer]);
+    if (projects.length > 0 && !selectedProjectId) {
+      setSelectedProjectId(projects[0]._id);
+    }
+  }, [projects, selectedProjectId]);
+
+  // Check if developer is in selected project
+  useEffect(() => {
+    if (!selectedProjectId || !developer) {
+      setInProject(false);
+      return;
+    }
+    const project = projects.find(p => p._id === selectedProjectId);
+    if (!project) return;
+    
+    const isMember = project.members?.some(m => m.user?._id === developer._id || m.user === developer._id);
+    setInProject(!!isMember);
+  }, [selectedProjectId, projects, developer]);
 
   if (!isOpen || !developer) return null;
 
   const handleToggleProjectMembership = async () => {
-    if (!activeProject) return;
+    if (!selectedProjectId) return;
     setLoading(true);
     try {
       if (inProject) {
-        await removeProjectMember({ id: activeProject._id, uid: developer._id });
+        await removeProjectMember({ id: selectedProjectId, uid: developer._id });
         setInProject(false);
       } else {
-        await addProjectMember({ id: activeProject._id, data: { email: developer.email, role: 'developer' } });
+        await addProjectMember({ id: selectedProjectId, data: { email: developer.email, role: 'developer' } });
         setInProject(true);
       }
+      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries(['projectMembers']);
     } catch (error) {
       console.error('Error toggling membership:', error);
     } finally {
@@ -70,21 +95,31 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
               </div>
             </div>
             
-            {activeProject && (
-              <div className="flex flex-col items-end gap-2">
-                <span className="text-xs text-slate-400 font-medium uppercase tracking-widest">Active Project Config</span>
+            {projects.length > 0 && (
+              <div className="flex flex-col items-end gap-3 min-w-[200px]">
+                <span className="text-xs text-slate-400 font-medium uppercase tracking-widest">Assign to Project</span>
+                
+                <select 
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg py-2 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  {projects.map(p => (
+                    <option key={p._id} value={p._id}>{p.title}</option>
+                  ))}
+                </select>
+
                 <button 
                   onClick={handleToggleProjectMembership}
-                  disabled={loading}
-                  className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 shadow-lg ${
+                  disabled={loading || !selectedProjectId}
+                  className={`w-full py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-lg ${
                     inProject 
                       ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20' 
                       : 'bg-primary hover:bg-primary-dark text-white shadow-primary/20'
-                  }`}
+                  } disabled:opacity-50`}
                 >
                   {loading ? 'Processing...' : inProject ? 'Remove from Project' : 'Add to Project'}
                 </button>
-                <div className="text-xs text-slate-400">Project: <span className="font-semibold text-slate-600 dark:text-slate-300">{activeProject.title}</span></div>
               </div>
             )}
           </div>

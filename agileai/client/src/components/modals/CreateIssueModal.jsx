@@ -5,6 +5,7 @@ import { getProjects } from '../../api/projects.api';
 import { getSprints } from '../../api/sprints.api';
 import useProjectStore from '../../store/projectStore';
 import useAuthStore from '../../store/authStore';
+import { useDeveloperWorkload } from '../../hooks/useDeveloperWorkload';
 
 const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
   const { activeProject } = useProjectStore();
@@ -21,9 +22,26 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
     priority: 'Medium',
     storyPoints: 0,
     assigneeId: '',
-    projectId: '',
     sprintId: ''
   });
+
+  const { workloads, loading: workloadsLoading } = useDeveloperWorkload(formData.projectId, formData.sprintId);
+
+  // Helper to find the recommended developer index for the auto-recommend tag
+  const projectDevs = (projects.find(p => p._id === formData.projectId) || activeProject)?.members?.filter(m => m.role !== 'pm') || [];
+  
+  let recommendedDevId = null;
+  if (projectDevs.length > 0 && formData.sprintId && formData.sprintId !== 'backlog') {
+    let minLoad = Infinity;
+    projectDevs.forEach(dev => {
+      const devId = dev.user._id || dev.user;
+      const load = workloads[devId] || 0;
+      if (load < minLoad) {
+        minLoad = load;
+        recommendedDevId = devId;
+      }
+    });
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -145,6 +163,16 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Summary / Title *</label>
+              <input type="text" name="title" value={formData.title} onChange={handleChange} required placeholder="Short summary of the issue" className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
+              <textarea name="description" value={formData.description} onChange={handleChange} rows="3" placeholder="Provide details, acceptance criteria, etc." className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-none"></textarea>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Sprint Assignment</label>
@@ -161,29 +189,34 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Assignee</label>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Assignee Capacity</label>
                 <select name="assigneeId" value={formData.assigneeId} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
                   <option value="">Unassigned</option>
-                  {selectedProject?.members?.map(m => (
-                    <option key={m.user?._id || m.user} value={m.user?._id || m.user}>
-                      {m.user?.name || m.user}
-                    </option>
-                  ))}
+                  {projectDevs.map(m => {
+                    const dId = m.user?._id || m.user;
+                    const name = m.user?.name || m.user;
+                    const load = workloads[dId] || 0;
+                    const isRecommended = dId === recommendedDevId;
+                    
+                    let label = name;
+                    if (formData.sprintId && formData.sprintId !== 'backlog') {
+                      label += ` • ${load} Tasks`;
+                    }
+                    if (isRecommended) {
+                      label += ` ★ Rec`;
+                    }
+                    
+                    return (
+                      <option key={dId} value={dId}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Summary / Title *</label>
-              <input type="text" name="title" value={formData.title} onChange={handleChange} required placeholder="Short summary of the issue" className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
-              <textarea name="description" value={formData.description} onChange={handleChange} rows="4" placeholder="Provide details, acceptance criteria, etc." className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-none"></textarea>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Priority</label>
                 <select name="priority" value={formData.priority} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
@@ -197,17 +230,6 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Story Points</label>
                 <input type="number" name="storyPoints" value={formData.storyPoints} onChange={handleChange} min="0" max="21" className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Assignee</label>
-                <select name="assigneeId" value={formData.assigneeId} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="">Unassigned</option>
-                  {activeProject?.members?.map(m => (
-                    <option key={m.user?._id || m.user} value={m.user?._id || m.user}>
-                      {m.user?.name || m.user}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
           </form>

@@ -45,7 +45,7 @@ export const MyTasksPage = () => {
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'todo': return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-      case 'in-progress': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      case 'inprogress': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
       case 'review': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
       case 'done': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
       default: return 'bg-slate-100 text-slate-700';
@@ -80,7 +80,7 @@ export const MyTasksPage = () => {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${getStatusColor(task.status)}`}>
-                      {task.status?.replace('-', ' ') || 'Todo'}
+                      {task.status?.replace('inprogress', 'In Progress') || 'Todo'}
                     </span>
                     <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
                       {task.ticketKey || 'TASK'}
@@ -119,7 +119,7 @@ export const MyTasksPage = () => {
                     className="text-sm border border-border-light dark:border-border-dark rounded-md bg-transparent px-3 py-1.5 font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     <option value="todo">Todo</option>
-                    <option value="in-progress">In Progress</option>
+                    <option value="inprogress">In Progress</option>
                     <option value="review">Review</option>
                     <option value="done">Done</option>
                   </select>
@@ -148,3 +148,4 @@ export const MyTasksPage = () => {
     </PageShell>
   );
 };
+

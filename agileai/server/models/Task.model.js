@@ -16,6 +16,10 @@ const taskSchema = new mongoose.Schema(
     actualHours: { type: Number, default: 0 },
     labels: [{ type: String }],
     dueDate: { type: Date },
+    assignedAt: { type: Date, default: null },   // When task was assigned to a developer
+    startedAt: { type: Date, default: null },     // When task first moved to inprogress
+    completedAt: { type: Date, default: null },   // When task moved to done
+    reopenedAt: { type: Date, default: null },    // When task moved back from done
     order: { type: Number, default: 0 },
     blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
     isBlocked: { type: Boolean, default: false },
@@ -27,7 +31,7 @@ const taskSchema = new mongoose.Schema(
       changedAt: { type: Date, default: Date.now }
     }],
     comments: [{
-      author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       text: String,
       createdAt: { type: Date, default: Date.now },
       editedAt: Date

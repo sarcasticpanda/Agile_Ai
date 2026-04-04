@@ -1,23 +1,71 @@
-import React from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { NavLink, Outlet, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import useAuthStore from '../../store/authStore';
 import useProjectStore from '../../store/projectStore';
+import axiosInstance from '../../api/axiosInstance';
 
 export const PMLayout = () => {
   const { user, logout } = useAuthStore();
-  const { activeProject } = useProjectStore();
+  const { activeProject, setActiveProject } = useProjectStore();
   const navigate = useNavigate();
+  const params = useParams();
+  const location = useLocation();
+  const [projectName, setProjectName] = useState('');
+
+  // Fetch all projects for the switcher
+  const { data: projectsRes } = useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/projects');
+      return data;
+    },
+    staleTime: 30000,
+  });
+  const projects = projectsRes?.data || [];
+
+  // Resolve project name from activeProject (could be object or string ID)
+  useEffect(() => {
+    const projId = params.projectId || (typeof activeProject === 'string' ? activeProject : activeProject?._id);
+    if (!projId) {
+      setProjectName('');
+      return;
+    }
+    // If activeProject is an object with title, use it directly
+    if (activeProject?.title) {
+      setProjectName(activeProject.title);
+      return;
+    }
+    // Otherwise fetch the project name
+    axiosInstance.get(`/projects/${projId}`)
+      .then(res => {
+        const proj = res.data?.data;
+        if (proj) {
+          setProjectName(proj.title || proj.name || '');
+          setActiveProject(proj); // Store the full object for future use
+        }
+      })
+      .catch(() => setProjectName(''));
+  }, [params.projectId, activeProject]);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
+  // Build dynamic paths based on active project
+  const activeProjectId = params.projectId || (typeof activeProject === 'string' ? activeProject : activeProject?._id);
+
   const navItems = [
     { name: 'Dashboard', icon: 'dashboard', path: '/pm/dashboard' },
     { name: 'My Projects', icon: 'folder_shared', path: '/pm/projects' },
-    { name: 'Backlog', icon: 'assignment_late', path: '/pm/backlog' },
-    { name: 'Sprint Board', icon: 'view_kanban', path: '/pm/board' },
+    ...(activeProjectId ? [
+      { name: 'Backlog', icon: 'assignment_late', path: `/pm/projects/${activeProjectId}/backlog` },
+      { name: 'Sprint Board', icon: 'view_kanban', path: `/pm/projects/${activeProjectId}/board` },
+    ] : [
+      { name: 'Backlog', icon: 'assignment_late', path: '/pm/backlog' },
+      { name: 'Sprint Board', icon: 'view_kanban', path: '/pm/board' },
+    ]),
     { name: 'Analytics', icon: 'analytics', path: '/pm/analytics' },
     { name: 'My Team', icon: 'group', path: '/pm/team' },
     { name: 'Profile', icon: 'person', path: '/pm/profile' },
@@ -81,9 +129,34 @@ export const PMLayout = () => {
         {/* TopNavBar */}
         <header className="bg-white/80 dark:bg-card-dark/80 backdrop-blur-md sticky top-0 z-40 flex justify-between items-center px-10 h-16 w-full border-b border-slate-200 dark:border-border-dark">
           <div className="flex items-center gap-6 flex-1">
-            <span className="text-lg font-black text-slate-800 dark:text-white hidden md:block">
-              {activeProject ? `Project: ${activeProject.title || activeProject.name}` : 'Active Dashboard'}
-            </span>
+            <div className="hidden md:block">
+              {projects.length > 0 ? (
+                <select 
+                  value={activeProjectId || ''}
+                  onChange={(e) => {
+                    const selected = projects.find(p => p._id === e.target.value);
+                    if (selected) {
+                      setActiveProject(selected);
+                      setProjectName(selected.title);
+                      // Optionally keep them on the exact same nested path if it exists, otherwise just board
+                      navigate(`/pm/projects/${selected._id}/board`);
+                    }
+                  }}
+                  className="bg-transparent text-lg font-black text-slate-800 dark:text-white outline-none cursor-pointer hover:text-primary transition-colors pr-2"
+                >
+                  <option value="" disabled>Select Project Context</option>
+                  {projects.map(p => (
+                    <option key={p._id} value={p._id} className="text-sm font-medium text-slate-800 dark:text-white bg-white dark:bg-card-dark cursor-pointer">
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-lg font-black text-slate-800 dark:text-white">
+                  {projectName ? projectName : 'Active Dashboard'}
+                </span>
+              )}
+            </div>
             <div className="relative w-64 group hidden sm:block">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
                 search

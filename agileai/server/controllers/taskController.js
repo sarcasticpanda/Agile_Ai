@@ -18,37 +18,46 @@ export const getTasks = async (req, res) => {
     const allowedIds = userProjects.map(p => p._id.toString());
 
     if (projectId && !allowedIds.includes(projectId)) {
-      return apiResponse(res, 403, false, null, 'Access denied to tasks in this project');
+      // If querying a specific project but not a member, ONLY allow if they are assigned to this project's tasks
+      query.$or = [{ project: projectId }];
+      query.assignee = userId;
+    } else {
+      // Allowed projects OR expressly assigned tasks
+      query.$or = [
+        { project: projectId ? projectId : { $in: allowedIds } },
+        { assignee: userId }
+      ];
     }
-    
-    // Only fetch tasks within allowed projects
-    query.projectId = projectId ? projectId : { $in: allowedIds };
   } else if (projectId) {
-    query.projectId = projectId;
+    query.project = projectId;
   }
 
   if (sprintId) {
-    query.sprintId = sprintId === 'backlog' ? null : sprintId;
+    query.sprint = sprintId === 'backlog' ? null : sprintId;
   }
   
-  if (assigneeId) query.assigneeId = assigneeId;
+  if (assigneeId) query.assignee = assigneeId;
 
   const tasks = await Task.find(query)
-    .populate('assigneeId', 'name avatar')
-    .populate('reporterId', 'name avatar')
+    .populate('assignee', 'name avatar')
+    .populate('reporter', 'name avatar')
     .sort({ order: 1, createdAt: -1 });
 
   apiResponse(res, 200, true, tasks, 'Tasks fetched successfully');
 };
 
 export const createTask = async (req, res) => {
-  const task = await Task.create({
-    ...req.body,
-    reporterId: req.user._id,
-  });
+  console.log('CREATE TASK REQUEST BODY:', req.body, 'USER ID:', req.user?._id);
+  
+  const payload = { ...req.body, reporter: req.user._id };
+  if (payload.assignee) {
+    payload.assignedAt = new Date();
+  }
 
-  if (task.sprintId) {
-    await Sprint.findByIdAndUpdate(task.sprintId, { $push: { tasks: task._id } });
+  const task = await Task.create(payload);
+
+  if (task.sprint) {
+    await Sprint.findByIdAndUpdate(task.sprint, { $push: { tasks: task._id } });
   }
 
   apiResponse(res, 201, true, task, 'Task created successfully');
@@ -56,8 +65,8 @@ export const createTask = async (req, res) => {
 
 export const getTaskById = async (req, res) => {
   const task = await Task.findById(req.params.id)
-    .populate('assigneeId', 'name avatar')
-    .populate('reporterId', 'name avatar')
+    .populate('assignee', 'name avatar')
+    .populate('reporter', 'name avatar')
     .populate('comments.user', 'name avatar')
     .populate('worklogs.user', 'name avatar');
 
@@ -69,22 +78,32 @@ export const getTaskById = async (req, res) => {
 };
 
 export const updateTask = async (req, res) => {
-  const task = await Task.findByIdAndUpdate(
-    req.params.id,
-    { $set: req.body },
-    { new: true }
-  ).populate('assigneeId', 'name avatar');
+  const task = await Task.findById(req.params.id);
 
   if (!task) {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`project:${task.projectId}`).emit('task:updated', task);
+  // Track assignedAt when assignee changes
+  if (req.body.assignee && req.body.assignee !== task.assignee?.toString()) {
+    req.body.assignedAt = new Date();
   }
 
-  apiResponse(res, 200, true, task, 'Task updated successfully');
+  // Apply updates
+  Object.assign(task, req.body);
+  task.lastActivityAt = new Date();
+  await task.save();
+
+  const populated = await Task.findById(task._id)
+    .populate('assignee', 'name avatar')
+    .populate('reporter', 'name avatar');
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`project:${task.project}`).emit('task:updated', populated);
+  }
+
+  apiResponse(res, 200, true, populated, 'Task updated successfully');
 };
 
 export const deleteTask = async (req, res) => {
@@ -94,8 +113,8 @@ export const deleteTask = async (req, res) => {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  if (task.sprintId) {
-    await Sprint.findByIdAndUpdate(task.sprintId, { $pull: { tasks: task._id } });
+  if (task.sprint) {
+    await Sprint.findByIdAndUpdate(task.sprint, { $pull: { tasks: task._id } });
   }
 
   await Task.findByIdAndDelete(req.params.id);
@@ -104,22 +123,49 @@ export const deleteTask = async (req, res) => {
 };
 
 export const updateTaskStatus = async (req, res) => {
-  const task = await Task.findByIdAndUpdate(
-    req.params.id,
-    { status: req.body.status },
-    { new: true }
-  );
+  const task = await Task.findById(req.params.id);
 
   if (!task) {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`project:${task.projectId}`).emit('task:moved', task);
+  const oldStatus = task.status;
+  const newStatus = req.body.status;
+
+  // Push to statusHistory
+  task.statusHistory.push({
+    from: oldStatus,
+    to: newStatus,
+    changedBy: req.user._id,
+    changedAt: new Date(),
+  });
+
+  // Set lifecycle timestamps
+  if (newStatus === 'inprogress' && !task.startedAt) {
+    task.startedAt = new Date();
+  }
+  if (newStatus === 'done') {
+    task.completedAt = new Date();
+  }
+  if (oldStatus === 'done' && newStatus !== 'done') {
+    task.reopenedAt = new Date();
+    task.completedAt = null; // Clear completion since it's reopened
   }
 
-  apiResponse(res, 200, true, task, 'Task status updated');
+  task.status = newStatus;
+  task.lastActivityAt = new Date();
+  await task.save();
+
+  const populated = await Task.findById(task._id)
+    .populate('assignee', 'name avatar')
+    .populate('reporter', 'name avatar');
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`project:${task.project}`).emit('task:moved', populated);
+  }
+
+  apiResponse(res, 200, true, populated, 'Task status updated');
 };
 
 export const updateTaskSprint = async (req, res) => {
@@ -129,10 +175,10 @@ export const updateTaskSprint = async (req, res) => {
     return apiResponse(res, 404, false, null, 'Task not found');
   }
 
-  const oldSprint = task.sprintId;
+  const oldSprint = task.sprint;
   const newSprint = req.body.sprintId;
 
-  task.sprintId = newSprint || null;
+  task.sprint = newSprint || null;
   await task.save();
 
   if (oldSprint) {
