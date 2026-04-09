@@ -6,7 +6,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "export:training-data": "node export_training_data.mjs",
+    "verify:ai-reality": "node ai_reality_verify.mjs",
+    "retrain:candidate": "python ../../ai-service/retrain_candidates.py --use-exported-data",
+    "retrain:promote": "python ../../ai-service/retrain_candidates.py --use-exported-data --promote",
+    "retrain:burnout": "python ../../ai-service/train_burnout_model.py --use-exported-data --auto-label",
+    "retrain:all": "npm run export:training-data && npm run retrain:candidate && npm run retrain:burnout"
   },
   "dependencies": {
     "axios": "^1.7.4",
@@ -25,6 +31,7 @@
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "socket.io-client": "^4.7.5"
   }
 }

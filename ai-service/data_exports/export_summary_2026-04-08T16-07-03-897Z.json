@@ -1,0 +1,20 @@
+{
+  "exportedAt": "2026-04-08T16:07:03.912Z",
+  "mongodbUriHostHint": "mongodb+srv://agileai_user:smiles1@se-pr",
+  "files": {
+    "risk": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\risk_training_from_mongo_2026-04-08T16-07-03-897Z.csv",
+    "effort": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\effort_training_from_mongo_2026-04-08T16-07-03-897Z.csv",
+    "burnout": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\burnout_features_unlabeled_2026-04-08T16-07-03-897Z.csv"
+  },
+  "counts": {
+    "completedSprints": 17,
+    "riskRows": 17,
+    "effortRows": 76,
+    "burnoutRows": 34,
+    "activeDevelopers": 34
+  },
+  "notes": [
+    "burnout_label is intentionally blank and must be labeled before training burnout model",
+    "risk success label is derived from completed_points >= 80% of committed_points"
+  ]
+}

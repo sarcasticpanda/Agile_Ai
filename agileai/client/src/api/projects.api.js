@@ -39,3 +39,15 @@ export const removeProjectMember = async ({ id, uid }) => {
   const response = await axiosInstance.delete(`/projects/${id}/members/${uid}`);
   return response.data;
 };
+
+export const previewProjectMemberRemoval = async ({ id, uid }) => {
+  const response = await axiosInstance.get(`/projects/${id}/members/${uid}/removal-impact`);
+  return response.data;
+};
+
+export const forceRemoveProjectMember = async ({ id, uid, force = false }) => {
+  const response = await axiosInstance.delete(`/projects/${id}/members/${uid}`, {
+    params: { force: force ? 'true' : 'false' },
+  });
+  return response.data;
+};

@@ -3,6 +3,7 @@ import {
   predictRisk,
   estimateEffort,
   getInsights,
+  predictBurnout,
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/rbac.middleware.js';
@@ -15,6 +16,7 @@ router.use(requireRole('admin', 'pm'));
 
 router.post('/predict-risk', predictRisk);
 router.post('/estimate-effort', estimateEffort);
+router.post('/predict-burnout', predictBurnout);
 router.get('/insights/:sprintId', getInsights);
 
 export default router;

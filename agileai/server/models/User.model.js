@@ -60,7 +60,28 @@ const userSchema = new mongoose.Schema(
     hourlyRate: {
       type: Number,
       default: null, // Admin/PM visibility only
-    }
+    },
+
+    // Phase-0 telemetry for time-pattern analytics (burnout index)
+    timezone: { type: String, default: null },
+    // Stored as HH:mm in the user's local time
+    workDayStartLocal: { type: String, default: null },
+    workDayEndLocal: { type: String, default: null },
+
+    // AI burnout fields (persisted prediction cache)
+    aiBurnoutRiskScore: { type: Number, default: null },
+    aiBurnoutRiskLevel: { type: String, enum: ['low', 'medium', 'high'], default: null },
+    aiBurnoutConfidence: { type: Number, default: null },
+    aiBurnoutModelVersion: { type: String, default: null },
+    aiBurnoutLastAnalyzed: { type: Date, default: null },
+    aiBurnoutHistory: [
+      {
+        score: { type: Number, default: null },
+        level: { type: String, enum: ['low', 'medium', 'high'], default: null },
+        confidence: { type: Number, default: null },
+        computedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

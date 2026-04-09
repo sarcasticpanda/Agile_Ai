@@ -24,6 +24,11 @@ export const updateTask = async ({ id, data }) => {
   return response.data;
 };
 
+export const previewAssignmentWarnings = async (data) => {
+  const response = await axiosInstance.post('/tasks/assignment-warning', data);
+  return response.data;
+};
+
 export const deleteTask = async (id) => {
   const response = await axiosInstance.delete(`/tasks/${id}`);
   return response.data;
@@ -56,6 +61,16 @@ export const deleteComment = async ({ id, cid }) => {
 
 export const addWorklog = async ({ id, data }) => {
   const response = await axiosInstance.post(`/tasks/${id}/worklog`, data);
+  return response.data;
+};
+
+export const startWorklogTimer = async ({ id, data }) => {
+  const response = await axiosInstance.post(`/tasks/${id}/worklog/start`, data || {});
+  return response.data;
+};
+
+export const stopWorklogTimer = async ({ id, data }) => {
+  const response = await axiosInstance.post(`/tasks/${id}/worklog/stop`, data || {});
   return response.data;
 };
 

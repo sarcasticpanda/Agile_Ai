@@ -21,9 +21,33 @@ export const useDeveloperWorkload = (projectId, sprintId) => {
         
         const loadMap = {};
         tasks.forEach(task => {
-          if (task.status !== 'done' && task.assignee) {
-            const devId = typeof task.assignee === 'string' ? task.assignee : task.assignee._id;
-            loadMap[devId] = (loadMap[devId] || 0) + 1;
+          if (task.status !== 'done') {
+            const assignedIds = new Set();
+
+            if (task.assignee) {
+              assignedIds.add(typeof task.assignee === 'string' ? task.assignee : task.assignee._id);
+            }
+
+            if (Array.isArray(task.assignees)) {
+              task.assignees.forEach((entry) => {
+                const user = entry?.user;
+                if (!user) return;
+                assignedIds.add(typeof user === 'string' ? user : user._id);
+              });
+            }
+
+            if (Array.isArray(task.subtasks)) {
+              task.subtasks.forEach((sub) => {
+                const user = sub?.assignee;
+                if (!user) return;
+                assignedIds.add(typeof user === 'string' ? user : user._id);
+              });
+            }
+
+            assignedIds.forEach((devId) => {
+              if (!devId) return;
+              loadMap[devId] = (loadMap[devId] || 0) + 1;
+            });
           }
         });
         

@@ -7,8 +7,17 @@ const sprintSchema = new mongoose.Schema(
     
     title: { type: String, required: true },
     goal: { type: String, default: '' },
+    // Planned schedule (do NOT overwrite on start/complete)
     startDate: Date,
     endDate: Date,
+
+    // Actual execution timestamps
+    startedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+
+    // Used to detect extension while sprint is active
+    originalEndDateAtStart: { type: Date, default: null },
+    wasExtended: { type: Boolean, default: false },
     status: { 
       type: String, 
       enum: ['planning', 'active', 'completed', 'cancelled'], 
@@ -18,6 +27,13 @@ const sprintSchema = new mongoose.Schema(
     // Locked at "Start Sprint" ? never changes retroactively
     committedPoints: { type: Number, default: 0 },   // sum of storyPoints at start
     completedPoints: { type: Number, default: 0 },   // updates live
+
+    members: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
 
     // For ML cold-start protection
     historicalVelocityUsed: { type: Number, default: null }, // fallback if team has <5 sprints

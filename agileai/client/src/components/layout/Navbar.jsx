@@ -10,7 +10,7 @@ export const Navbar = ({ title }) => {
   const [showIssueModal, setShowIssueModal] = useState(false);
 
   return (
-    <header className="h-16 border-b border-border-light dark:border-border-dark bg-card-light/50 dark:bg-card-dark/50 backdrop-blur-md flex items-center justify-between px-8 z-10 transition-colors duration-200">
+    <header className="h-16 border-b border-border-light dark:border-border-dark bg-card-light dark:bg-card-dark flex items-center justify-between px-8 z-10 transition-colors duration-200 shadow-sm">
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium text-slate-500">Workspace /</span>
         <span className="text-sm font-semibold">{title || 'AgileAI Dashboard'}</span>

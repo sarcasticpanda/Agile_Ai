@@ -1,27 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
-import { createTask } from '../../api/tasks.api';
+import { createTask, previewAssignmentWarnings } from '../../api/tasks.api';
 import { getProjects } from '../../api/projects.api';
 import { getSprints } from '../../api/sprints.api';
 import useProjectStore from '../../store/projectStore';
 import useAuthStore from '../../store/authStore';
 import { useDeveloperWorkload } from '../../hooks/useDeveloperWorkload';
 
-const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
+const CreateIssueModal = ({ isOpen, onClose, onTaskCreated = () => {}, projectId }) => {
   const { activeProject } = useProjectStore();
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [projects, setProjects] = useState([]);
   const [sprints, setSprints] = useState([]);
+  const [assignmentPreview, setAssignmentPreview] = useState(null);
+  const [assignmentPreviewLoading, setAssignmentPreviewLoading] = useState(false);
 
   const [formData, setFormData] = useState({
+    projectId: projectId || '',
     title: '',
     description: '',
-    issueType: 'Task',
-    priority: 'Medium',
-    storyPoints: 0,
-    assigneeId: '',
+    type: 'task',
+    priority: 'medium',
+    storyPoints: '0',
+    assigneeIds: [],
     sprintId: ''
   });
 
@@ -50,16 +53,61 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
   }, [isOpen]);
 
   useEffect(() => {
+    if (projectId) {
+      setFormData(prev => ({ ...prev, projectId }));
+      return;
+    }
     if (activeProject && !formData.projectId) {
       setFormData(prev => ({ ...prev, projectId: activeProject._id }));
     }
-  }, [activeProject, formData.projectId]);
+  }, [activeProject, formData.projectId, projectId]);
 
   useEffect(() => {
     if (formData.projectId) {
       fetchSprints(formData.projectId);
     }
   }, [formData.projectId]);
+
+  useEffect(() => {
+    if (!formData.projectId || formData.assigneeIds.length === 0) {
+      setAssignmentPreview(null);
+      setAssignmentPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAssignmentPreview = async () => {
+      setAssignmentPreviewLoading(true);
+      try {
+        const storyPointsNum = Number(formData.storyPoints);
+        const previewRes = await previewAssignmentWarnings({
+          projectId: formData.projectId,
+          sprintId: formData.sprintId || undefined,
+          assigneeIds: formData.assigneeIds,
+          storyPoints: Number.isFinite(storyPointsNum) && storyPointsNum > 0 ? storyPointsNum : 0,
+        });
+
+        if (!cancelled) {
+          setAssignmentPreview(previewRes?.data || null);
+        }
+      } catch (_err) {
+        if (!cancelled) {
+          setAssignmentPreview(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAssignmentPreviewLoading(false);
+        }
+      }
+    };
+
+    loadAssignmentPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.projectId, formData.sprintId, formData.assigneeIds, formData.storyPoints]);
 
   const fetchProjects = async () => {
     try {
@@ -85,6 +133,13 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleAssigneeChange = (e) => {
+    const selectedIds = Array.from(e.target.selectedOptions)
+      .map((option) => option.value)
+      .filter(Boolean);
+    setFormData((prev) => ({ ...prev, assigneeIds: selectedIds }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.projectId) {
@@ -95,13 +150,75 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
     setError('');
 
     try {
-      const payload = { ...formData };
-      if (!payload.assigneeId) delete payload.assigneeId;
-      if (!payload.sprintId) delete payload.sprintId; else payload.sprint = payload.sprintId; // map sprintId to sprint for task model
+      const storyPointsNum = Number(formData.storyPoints);
+      const selectedAssigneeIds = Array.from(new Set((formData.assigneeIds || []).filter(Boolean)));
+
+      if (selectedAssigneeIds.length > 0) {
+        try {
+          const previewRes = await previewAssignmentWarnings({
+            projectId: formData.projectId,
+            sprintId: formData.sprintId || undefined,
+            assigneeIds: selectedAssigneeIds,
+            storyPoints: Number.isFinite(storyPointsNum) && storyPointsNum > 0 ? storyPointsNum : 0,
+          });
+
+          const previewData = previewRes?.data || null;
+          const warnings = (previewData?.assignees || []).flatMap((row) =>
+            (row?.warnings || []).map((warning) => ({
+              severity: warning?.severity,
+              message: warning?.message,
+              userName: row?.user?.name || 'Assignee',
+            }))
+          );
+
+          if (warnings.length > 0) {
+            const hasHigh = warnings.some((w) => w.severity === 'high');
+            const summary = warnings
+              .slice(0, 4)
+              .map((w) => `- ${w.userName}: ${w.message}`)
+              .join('\n');
+
+            const proceed = window.confirm(
+              `${hasHigh ? 'High-risk assignment warning.' : 'Assignment warning.'}\n\n${summary}${warnings.length > 4 ? `\n...and ${warnings.length - 4} more warning(s).` : ''}\n\nProceed anyway?`
+            );
+
+            if (!proceed) {
+              return;
+            }
+          }
+
+          setAssignmentPreview(previewData);
+        } catch (warningErr) {
+          console.warn('Assignment warning preview failed:', warningErr);
+        }
+      }
+
+      const payload = {
+        project: formData.projectId,
+        title: formData.title,
+        description: formData.description || '',
+        type: (formData.type || 'task').toLowerCase(),
+        priority: (formData.priority || 'medium').toLowerCase(),
+        storyPoints: Number.isFinite(storyPointsNum) && storyPointsNum > 0 ? storyPointsNum : undefined,
+        assignee: selectedAssigneeIds[0] || undefined,
+        assignees:
+          selectedAssigneeIds.length > 0
+            ? selectedAssigneeIds.map((id) => ({
+                user: id,
+                contributionPercent: Number((100 / selectedAssigneeIds.length).toFixed(2)),
+              }))
+            : undefined,
+        sprint: formData.sprintId || undefined,
+      };
+
+      // Remove undefined keys (so we don't overwrite backend defaults)
+      Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
       const res = await createTask(payload);
       if (res.success) {
-        onTaskCreated(res.data);
+        if (typeof onTaskCreated === 'function') {
+          onTaskCreated(res.data);
+        }
         onClose();
       }
     } catch (err) {
@@ -112,6 +229,15 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
   };
 
   const selectedProject = projects.find(p => p._id === formData.projectId) || activeProject;
+  const assignmentWarnings = (assignmentPreview?.assignees || []).flatMap((row) =>
+    (row?.warnings || []).map((warning, idx) => ({
+      key: `${row?.user?._id || row?.userId || 'assignee'}-${idx}-${warning?.code || 'warning'}`,
+      userName: row?.user?.name || 'Assignee',
+      severity: warning?.severity,
+      message: warning?.message,
+    }))
+  );
+  const hasHighAssignmentWarning = assignmentWarnings.some((w) => w.severity === 'high');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -154,11 +280,11 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Issue Type</label>
-                <select name="issueType" value={formData.issueType} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="Task">Task</option>
-                  <option value="Story">Story</option>
-                  <option value="Bug">Bug</option>
-                  <option value="Epic">Epic</option>
+                <select name="type" value={formData.type} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="task">Task</option>
+                  <option value="story">Story</option>
+                  <option value="bug">Bug</option>
+                  <option value="epic">Epic</option>
                 </select>
               </div>
             </div>
@@ -190,8 +316,13 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Assignee Capacity</label>
-                <select name="assigneeId" value={formData.assigneeId} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="">Unassigned</option>
+                <select
+                  name="assigneeIds"
+                  multiple
+                  value={formData.assigneeIds}
+                  onChange={handleAssigneeChange}
+                  className="w-full h-32 bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                >
                   {projectDevs.map(m => {
                     const dId = m.user?._id || m.user;
                     const name = m.user?.name || m.user;
@@ -213,6 +344,24 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
                     );
                   })}
                 </select>
+                <p className="mt-1 text-[11px] text-slate-500">Tip: hold Ctrl/Cmd to select multiple assignees.</p>
+                {assignmentPreviewLoading && formData.assigneeIds.length > 0 && (
+                  <p className="mt-2 text-xs text-slate-500">Checking assignment workload and burnout signals...</p>
+                )}
+                {assignmentWarnings.length > 0 && (
+                  <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${hasHighAssignmentWarning ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                    <p className="font-semibold mb-1">{hasHighAssignmentWarning ? 'High-risk assignment advisory' : 'Assignment advisory'}</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {assignmentWarnings.slice(0, 3).map((warning) => (
+                        <li key={warning.key}>{warning.userName}: {warning.message}</li>
+                      ))}
+                    </ul>
+                    {assignmentWarnings.length > 3 && (
+                      <p className="mt-1">+{assignmentWarnings.length - 3} more warning(s)</p>
+                    )}
+                    <p className="mt-1 font-medium">Advisory only. You can still create the issue.</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -220,11 +369,10 @@ const CreateIssueModal = ({ isOpen, onClose, onTaskCreated }) => {
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Priority</label>
                 <select name="priority" value={formData.priority} onChange={handleChange} className="w-full bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="Highest">Highest</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                  <option value="Lowest">Lowest</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
                 </select>
               </div>
               <div>

@@ -23,3 +23,13 @@ export const claimDeveloper = (id, data) => {
 export const releaseDeveloper = (id) => {
   return api.patch(`/pm/developers/${id}/release`);
 };
+
+export const previewReleaseDeveloperImpact = (id) => {
+  return api.get(`/pm/developers/${id}/release-impact`);
+};
+
+export const forceReleaseDeveloper = (id, force = false) => {
+  return api.patch(`/pm/developers/${id}/release`, null, {
+    params: { force: force ? 'true' : 'false' },
+  });
+};

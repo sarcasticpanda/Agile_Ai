@@ -67,17 +67,72 @@ export const BacklogPage = () => {
     return (tasks || []).filter(t => (t.sprint?._id || t.sprint) === selectedSprintId);
   }, [tasks, selectedSprintId]);
 
+  const confirmAssignmentWarnings = async ({ assigneeIds, storyPoints, sprintId }) => {
+    const normalizedIds = Array.from(new Set((assigneeIds || []).filter(Boolean)));
+    if (normalizedIds.length === 0) return true;
+
+    try {
+      const previewRes = await tasksApi.previewAssignmentWarnings({
+        projectId,
+        sprintId: sprintId || undefined,
+        assigneeIds: normalizedIds,
+        storyPoints: Number.isFinite(storyPoints) && storyPoints > 0 ? storyPoints : 0,
+      });
+
+      const warnings = (previewRes?.data?.assignees || []).flatMap((row) =>
+        (row?.warnings || []).map((warning) => ({
+          severity: warning?.severity,
+          message: warning?.message,
+          userName: row?.user?.name || 'Assignee',
+        }))
+      );
+
+      if (warnings.length === 0) return true;
+
+      const hasHigh = warnings.some((w) => w.severity === 'high');
+      const summary = warnings
+        .slice(0, 4)
+        .map((w) => `- ${w.userName}: ${w.message}`)
+        .join('\n');
+
+      return window.confirm(
+        `${hasHigh ? 'High-risk assignment warning.' : 'Assignment warning.'}\n\n${summary}${warnings.length > 4 ? `\n...and ${warnings.length - 4} more warning(s).` : ''}\n\nProceed anyway?`
+      );
+    } catch (error) {
+      console.warn('Assignment warning preview failed:', error);
+      return true;
+    }
+  };
+
   const handleCreateTask = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const raw = Object.fromEntries(formData);
+    const storyPoints = raw.storyPoints ? Number(raw.storyPoints) : 0;
+    const assigneeIds = formData.getAll('assignees').filter(Boolean);
+
+    const shouldProceed = await confirmAssignmentWarnings({
+      assigneeIds,
+      storyPoints,
+      sprintId: selectedSprintId === 'backlog' ? undefined : selectedSprintId,
+    });
+
+    if (!shouldProceed) {
+      toast.error('Task creation cancelled. Review assignment advisories first.');
+      return;
+    }
+
     const data = {
       title: raw.title,
       description: raw.description || '',
       type: (raw.type || 'task').toLowerCase(),
       priority: (raw.priority || 'medium').toLowerCase(),
-      storyPoints: raw.storyPoints ? Number(raw.storyPoints) : undefined,
-      assignee: raw.assignee || undefined,
+      storyPoints: storyPoints > 0 ? storyPoints : undefined,
+      assignee: assigneeIds[0] || undefined,
+      assignees:
+        assigneeIds.length > 0
+          ? assigneeIds.map((id) => ({ user: id, contributionPercent: Number((100 / assigneeIds.length).toFixed(2)) }))
+          : undefined,
       project: projectId,
       sprint: selectedSprintId === 'backlog' ? undefined : selectedSprintId,
     };
@@ -172,6 +227,12 @@ export const BacklogPage = () => {
                     </div>
                     <h4 className={`text-xs font-bold ${selectedSprintId === 'backlog' ? 'text-slate-900 dark:text-white' : 'text-slate-600'}`}>Main Backlog</h4>
                   </div>
+
+                  {selectedSprintId === 'backlog' && (
+                    <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] text-slate-600 leading-relaxed">
+                      Backlog is project-level planned work not committed to any sprint yet. Once moved into an active/planning sprint, it no longer counts as backlog.
+                    </div>
+                  )}
 
                   {activeSprints.map(sprint => {
                     const sprintTasks = (tasks || []).filter(t => (t.sprint?._id || t.sprint) === sprint._id);
@@ -386,16 +447,16 @@ export const BacklogPage = () => {
             ]} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input name="storyPoints" type="number" label="Story Points" defaultValue="0" />
+            <Input name="storyPoints" type="number" label="Story Points" defaultValue="0" min="0" max="13" />
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 <Users size={14} className="inline mr-1" /> Assign To
               </label>
               <select 
-                name="assignee" 
-                className="w-full bg-transparent border border-border-light dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                name="assignees"
+                multiple
+                className="w-full h-28 bg-transparent border border-border-light dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
               >
-                <option value="">Unassigned</option>
                 {projectMembers
                   .filter(m => m.user && m.role !== 'pm')
                   .map(m => (
@@ -405,8 +466,12 @@ export const BacklogPage = () => {
                   ))
                 }
               </select>
+              <p className="mt-1 text-[11px] text-slate-500">Tip: hold Ctrl/Cmd to select multiple assignees.</p>
             </div>
           </div>
+          <p className="text-[11px] text-slate-500">
+            Story Points estimate complexity/effort (0-13). Priority indicates urgency/business impact. A simple urgent bug can be low points but high priority.
+          </p>
           <Button type="submit" className="w-full mt-4">Create Issue</Button>
         </form>
       </Modal>

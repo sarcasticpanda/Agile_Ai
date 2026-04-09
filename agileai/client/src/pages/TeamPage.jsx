@@ -79,14 +79,29 @@ export const TeamPage = () => {
   });
 
   const releaseMutation = useMutation({
-    mutationFn: (id) => teamApi.releaseDeveloper(id),
+    mutationFn: ({ id, force }) => teamApi.forceReleaseDeveloper(id, force),
     onSuccess: () => {
       toast.success('Developer released to global pool.');
       queryClient.invalidateQueries({ queryKey: ['myRoster'] });
       queryClient.invalidateQueries({ queryKey: ['freePool'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || 'Failed to release developer.');
+    },
+  });
+
+  const removeFromProjectMutation = useMutation({
+    mutationFn: ({ projectId: targetProjectId, userId, force }) =>
+      projectsApi.forceRemoveProjectMember({ id: targetProjectId, uid: userId, force }),
+    onSuccess: () => {
+      toast.success('Developer removed from project successfully.');
+      queryClient.invalidateQueries({ queryKey: ['projectMembers', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['myRoster'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to remove developer from project.');
     },
   });
 
@@ -105,6 +120,88 @@ export const TeamPage = () => {
         return name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                role.toLowerCase().includes(searchQuery.toLowerCase());
     });
+  };
+
+  const getImpactSummaryText = (impact = {}) => {
+    const active = Number(impact.activeSprintAssignments || 0);
+    const total = Number(impact.totalAssignments || 0);
+    const backlog = Number(impact.backlogAssignments || 0);
+    return `Assignments: ${total}\nActive sprint assignments: ${active}\nBacklog assignments: ${backlog}`;
+  };
+
+  const handleReleaseDeveloper = async (developer) => {
+    try {
+      const previewRes = await teamApi.previewReleaseDeveloperImpact(developer._id);
+      const impact = previewRes?.data?.data || previewRes?.data || {};
+
+      let force = false;
+      if (Number(impact.activeSprintAssignments || 0) > 0) {
+        const proceed = window.confirm(
+          `This developer has active sprint assignments.\n\n${getImpactSummaryText(impact)}\n\nReleasing will remove them from your managed projects and unassign related tasks. Continue?`
+        );
+        if (!proceed) return;
+        force = true;
+      } else {
+        const proceed = window.confirm(
+          `Release ${developer.name} to the talent pool?\n\n${getImpactSummaryText(impact)}`
+        );
+        if (!proceed) return;
+      }
+
+      releaseMutation.mutate({ id: developer._id, force });
+    } catch (error) {
+      const impact = error?.response?.data?.data?.impact;
+      if (error?.response?.status === 409 && impact) {
+        const proceed = window.confirm(
+          `Release warning:\n\n${getImpactSummaryText(impact)}\n\nProceed with force release?`
+        );
+        if (proceed) {
+          releaseMutation.mutate({ id: developer._id, force: true });
+        }
+        return;
+      }
+
+      toast.error(error?.response?.data?.message || 'Failed to preview release impact.');
+    }
+  };
+
+  const handleRemoveFromProject = async (member) => {
+    const memberId = member?.user?._id;
+    if (!projectId || !memberId) return;
+
+    try {
+      const previewRes = await projectsApi.previewProjectMemberRemoval({ id: projectId, uid: memberId });
+      const impact = previewRes?.data || {};
+
+      let force = false;
+      if (Number(impact.activeSprintAssignments || 0) > 0) {
+        const proceed = window.confirm(
+          `This member has active sprint assignments in this project.\n\n${getImpactSummaryText(impact)}\n\nRemoving will also unassign them from project tasks. Continue?`
+        );
+        if (!proceed) return;
+        force = true;
+      } else {
+        const proceed = window.confirm(
+          `Remove ${member.user?.name || 'member'} from this project?\n\n${getImpactSummaryText(impact)}`
+        );
+        if (!proceed) return;
+      }
+
+      removeFromProjectMutation.mutate({ projectId, userId: memberId, force });
+    } catch (error) {
+      const impact = error?.response?.data?.data?.impact;
+      if (error?.response?.status === 409 && impact) {
+        const proceed = window.confirm(
+          `Removal warning:\n\n${getImpactSummaryText(impact)}\n\nProceed with force removal?`
+        );
+        if (proceed) {
+          removeFromProjectMutation.mutate({ projectId, userId: memberId, force: true });
+        }
+        return;
+      }
+
+      toast.error(error?.response?.data?.message || 'Failed to preview removal impact.');
+    }
   };
 
   // --- RENDER LOGIC ---
@@ -165,7 +262,15 @@ export const TeamPage = () => {
                   <td className="py-4 px-6 text-right space-x-1">
                     <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary"><Mail size={16} /></Button>
                     {(isAdmin || isPM) && (
-                      <Button variant="ghost" size="icon" className="text-slate-400 hover:text-red-500"><UserMinus size={16} /></Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-slate-400 hover:text-red-500"
+                        onClick={() => handleRemoveFromProject(member)}
+                        disabled={removeFromProjectMutation.isPending}
+                      >
+                        <UserMinus size={16} />
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -260,12 +365,17 @@ export const TeamPage = () => {
                   className="absolute top-10 right-4 bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-xl shadow-2xl z-50 py-2 w-48 overflow-hidden"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <button className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedDeveloper(member);
+                      setActiveMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2"
+                  >
                     <ExternalLink size={14} /> View Details
                   </button>
-                  <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1"></div>
                   <button 
-                    onClick={() => { releaseMutation.mutate(member._id); setActiveMenuId(null); }}
+                    onClick={() => { handleReleaseDeveloper(member); setActiveMenuId(null); }}
                     className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors flex items-center gap-2"
                   >
                     <Trash2 size={14} /> Release to Pool
@@ -283,7 +393,22 @@ export const TeamPage = () => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-3 mt-6">
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-zinc-800">
+                <span className="text-[10px] uppercase font-black text-slate-400 block mb-2">Assigned Projects</span>
+                <div className="flex flex-wrap gap-2">
+                  {member.projects && member.projects.length > 0 ? (
+                    member.projects.map(p => (
+                      <Badge key={p._id} variant="outline" className="text-[10px] bg-slate-50 dark:bg-zinc-900/50">
+                        {p.title}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">No assigned projects</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl">
                   <span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Status</span>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">

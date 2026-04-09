@@ -47,7 +47,7 @@ async function run() {
     const usersRes = await request('/admin/users', 'GET', null, adminToken);
     const users = usersRes.data;
     
-    const pm = users.find(u => u.role === 'pm');
+    const pm = users.find(u => u.email === 'pm@agileai.com') || users.find(u => u.role === 'pm');
     if (!pm) throw new Error("No PM found");
     
     // Find all 5 devs

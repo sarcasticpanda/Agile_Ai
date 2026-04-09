@@ -158,13 +158,24 @@ export const getHierarchyOverview = async (req, res) => {
     const projects = await Project.find().populate('members.user', 'name role').populate('owner', 'name role');
     const sprints = await Sprint.find();
     const tasks = await Task.find({ status: { $ne: 'done' } }).populate('assignee', 'name avatar');
+
+    const idString = (value) => {
+      if (!value) return null;
+      return String(value?._id ?? value);
+    };
     
     const tree = pms.map(pm => {
       const managedDevs = allDevs.filter(d => d.managedBy?.toString() === pm._id.toString());
-      const ownedProjects = projects.filter(p => p.owner?._id.toString() === pm._id.toString());
+      const ownedProjects = projects.filter((p) => {
+        const ownerId = idString(p.owner);
+        return ownerId && ownerId === pm._id.toString();
+      });
       
       const enrichedProjects = ownedProjects.map(proj => {
-        const projSprints = sprints.filter(s => s.projectId.toString() === proj._id.toString());
+        const projSprints = sprints.filter((s) => {
+          const sprintProjectId = idString(s.projectId ?? s.project);
+          return sprintProjectId && sprintProjectId === proj._id.toString();
+        });
         const enrichedSprints = projSprints.map(s => {
           const sprintTasks = tasks.filter(t => t.sprint?.toString() === s._id.toString());
           return {

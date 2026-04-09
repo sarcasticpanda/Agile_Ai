@@ -1,0 +1,23 @@
+{
+  "candidateVersion": "addd8b38be22",
+  "createdAt": "2026-04-08T14:12:52.703466+00:00",
+  "candidateName": "candidate_20260408T141248Z_addd8b38be22",
+  "candidateDir": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\models\\candidates\\candidate_20260408T141248Z_addd8b38be22",
+  "trials": 2,
+  "data": {
+    "riskRowsTotal": 3820,
+    "effortRowsTotal": 23087,
+    "riskRowsFromExport": 17,
+    "effortRowsFromExport": 70,
+    "usedExportData": true,
+    "exportSource": "summary",
+    "exportSummaryPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\export_summary_2026-04-08T13-38-06-670Z.json",
+    "riskExportCsv": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\risk_training_from_mongo_2026-04-08T13-38-06-670Z.csv",
+    "effortExportCsv": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\effort_training_from_mongo_2026-04-08T13-38-06-670Z.csv"
+  },
+  "metrics": {
+    "risk_model_macro_f1": 1.0,
+    "effort_model_mae": 3.5753
+  },
+  "productionOverwritten": false
+}

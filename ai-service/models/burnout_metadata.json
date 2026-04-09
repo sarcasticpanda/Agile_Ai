@@ -1,0 +1,44 @@
+{
+  "featureVersion": "burnout_v1_mongo_export",
+  "createdAt": "2026-04-08T16:11:14.779272+00:00",
+  "modelVersion": "95045f1ca9c4675c112518d38844e0c0947b3e270867f58edf6ee796b23470f2",
+  "windowDays": 30,
+  "labelSource": "heuristic",
+  "classIndexToLevel": {
+    "0": "low",
+    "1": "medium",
+    "2": "high"
+  },
+  "classDistribution": {
+    "low": 11,
+    "medium": 11,
+    "high": 12
+  },
+  "trainingRows": 34,
+  "crossValidation": {
+    "nSplits": 5,
+    "macroF1": 0.3614,
+    "trials": 30
+  },
+  "bestParams": {
+    "n_estimators": 113,
+    "max_depth": 4,
+    "learning_rate": 0.18871867269657197,
+    "subsample": 0.8867529267593306,
+    "colsample_bytree": 0.6456034250214809,
+    "random_state": 42,
+    "objective": "multi:softprob",
+    "num_class": 3,
+    "eval_metric": "mlogloss"
+  },
+  "data": {
+    "csvPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\burnout_features_unlabeled_2026-04-08T16-07-03-897Z.csv",
+    "source": "summary",
+    "summaryPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\export_summary_2026-04-08T16-07-03-897Z.json",
+    "heuristicScoreStats": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.07520183666335979
+    }
+  }
+}

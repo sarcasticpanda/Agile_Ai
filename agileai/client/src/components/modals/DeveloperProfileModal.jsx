@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Shield, ShieldCheck, Target, CheckCircle2, ChevronRight, Activity, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { addProjectMember, removeProjectMember } from '../../api/projects.api';
-import useProjectStore from '../../store/projectStore';
+import {
+  addProjectMember,
+  previewProjectMemberRemoval,
+  forceRemoveProjectMember,
+} from '../../api/projects.api';
+import { toast } from 'react-hot-toast';
 
 const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
   const queryClient = useQueryClient();
@@ -12,28 +16,61 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
   const { data: projectsRes } = useQuery({
     queryKey: ['projects'],
     queryFn: () => import('../../api/projects.api').then(api => api.getProjects()),
+    enabled: isOpen,
   });
   const projects = projectsRes?.data || [];
   
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [inProject, setInProject] = useState(false);
 
-  useEffect(() => {
-    if (projects.length > 0 && !selectedProjectId) {
-      setSelectedProjectId(projects[0]._id);
-    }
-  }, [projects, selectedProjectId]);
+  const toIdString = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object' && value._id) return String(value._id);
+    if (typeof value.toString === 'function') return String(value.toString());
+    return null;
+  };
 
-  // Check if developer is in selected project
+  useEffect(() => {
+    if (!isOpen || !developer || projects.length === 0) return;
+
+    const hasCurrentSelection = projects.some(
+      (project) => toIdString(project?._id) === toIdString(selectedProjectId)
+    );
+
+    if (hasCurrentSelection) return;
+
+    const firstMembership = projects.find((project) =>
+      (project?.members || []).some((member) => {
+        const memberUserId = toIdString(member?.user?._id || member?.user);
+        return memberUserId === toIdString(developer?._id);
+      })
+    );
+
+    setSelectedProjectId(toIdString(firstMembership?._id || projects[0]?._id) || '');
+  }, [isOpen, developer, projects, selectedProjectId]);
+
+  const currentAssignments = projects.filter((project) =>
+    (project?.members || []).some((member) => {
+      const memberUserId = toIdString(member?.user?._id || member?.user);
+      return memberUserId === toIdString(developer?._id);
+    })
+  );
+
   useEffect(() => {
     if (!selectedProjectId || !developer) {
       setInProject(false);
       return;
     }
-    const project = projects.find(p => p._id === selectedProjectId);
+
+    const project = projects.find((p) => toIdString(p?._id) === toIdString(selectedProjectId));
     if (!project) return;
     
-    const isMember = project.members?.some(m => m.user?._id === developer._id || m.user === developer._id);
+    const isMember = (project.members || []).some((m) => {
+      const memberUserId = toIdString(m?.user?._id || m?.user);
+      return memberUserId === toIdString(developer?._id);
+    });
+
     setInProject(!!isMember);
   }, [selectedProjectId, projects, developer]);
 
@@ -44,16 +81,40 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
     setLoading(true);
     try {
       if (inProject) {
-        await removeProjectMember({ id: selectedProjectId, uid: developer._id });
+        const previewRes = await previewProjectMemberRemoval({
+          id: selectedProjectId,
+          uid: developer._id,
+        });
+
+        const impact = previewRes?.data || {};
+        const activeAssignments = Number(impact.activeSprintAssignments || 0);
+
+        let force = false;
+        if (activeAssignments > 0) {
+          const proceed = window.confirm(
+            `This developer has ${activeAssignments} active sprint assignment(s) in this project. Removing them will also unassign related tasks. Continue?`
+          );
+          if (!proceed) {
+            setLoading(false);
+            return;
+          }
+          force = true;
+        }
+
+        await forceRemoveProjectMember({ id: selectedProjectId, uid: developer._id, force });
         setInProject(false);
+        toast.success('Removed from project successfully.');
       } else {
         await addProjectMember({ id: selectedProjectId, data: { email: developer.email, role: 'developer' } });
         setInProject(true);
+        toast.success('Added to project successfully.');
       }
-      queryClient.invalidateQueries(['projects']);
-      queryClient.invalidateQueries(['projectMembers']);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projectMembers'] });
+      queryClient.invalidateQueries({ queryKey: ['myRoster'] });
     } catch (error) {
       console.error('Error toggling membership:', error);
+      toast.error(error?.response?.data?.message || 'Failed to update project membership');
     } finally {
       setLoading(false);
     }
@@ -105,7 +166,7 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
                   className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg py-2 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-primary/30"
                 >
                   {projects.map(p => (
-                    <option key={p._id} value={p._id}>{p.title}</option>
+                    <option key={p._id} value={p._id}>{p.key ? `${p.key} - ${p.title}` : p.title}</option>
                   ))}
                 </select>
 
@@ -123,6 +184,27 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
               </div>
             )}
           </div>
+
+          {/* Current Project Assignments */}
+          {currentAssignments.length > 0 && (
+            <div className="mb-6">
+              <h4 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-border-dark pb-2">
+                Current Project Assignments
+              </h4>
+              <div className="grid grid-cols-1 gap-2">
+                {currentAssignments.map(p => (
+                  <div key={p._id} className="flex items-center justify-between bg-slate-50 dark:bg-zinc-900/50 rounded-xl px-4 py-3 border border-slate-100 dark:border-border-dark">
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{p.title}</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${
+                      p.status === 'active' 
+                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
+                        : 'bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-slate-400'
+                    }`}>{p.status || 'active'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* AI Metrics & Capacity */}
           <h4 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4 border-b border-slate-100 dark:border-border-dark pb-2">

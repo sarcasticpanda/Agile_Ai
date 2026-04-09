@@ -1,0 +1,11 @@
+{
+  "burnout_model_macro_f1": 0.3614,
+  "burnout_training_rows": 34,
+  "burnout_label_source": "heuristic",
+  "class_distribution": {
+    "low": 11,
+    "medium": 11,
+    "high": 12
+  },
+  "computed_at": "2026-04-08T16:11:14.775247+00:00"
+}

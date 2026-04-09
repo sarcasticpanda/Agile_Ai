@@ -16,7 +16,10 @@ export const getMyRoster = async (req, res) => {
     }).select('-password');
 
     const enrichedDevs = await Promise.all(developers.map(async (dev) => {
-      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      // Find projects this developer belongs to
+      const projects = await Project.find({ 'members.user': dev._id }).select('_id title status');
+      const projectCount = projects.length;
+
       // Number of sprints where the developer has at least one task assigned
       const assignedTasks = await Task.find({ assignee: dev._id });
       const sprintIds = [...new Set(assignedTasks.map(t => t.sprint?.toString()).filter(Boolean))];
@@ -24,6 +27,7 @@ export const getMyRoster = async (req, res) => {
 
       return {
         ...dev.toObject(),
+        projects,
         projectCount,
         sprintCount
       };
@@ -51,13 +55,15 @@ export const getFreePool = async (req, res) => {
     }).select('-password');
 
     const enrichedPool = await Promise.all(freeDevelopers.map(async (dev) => {
-      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      const projects = await Project.find({ 'members.user': dev._id }).select('_id title status');
+      const projectCount = projects.length;
       const assignedTasks = await Task.find({ assignee: dev._id });
       const sprintIds = [...new Set(assignedTasks.map(t => t.sprint?.toString()).filter(Boolean))];
       const sprintCount = sprintIds.length;
 
       return {
         ...dev.toObject(),
+        projects,
         projectCount,
         sprintCount
       };

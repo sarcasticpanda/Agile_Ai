@@ -66,13 +66,13 @@ const adminId = await upsertUser({
   status: 'active',
 });
 
-console.log('\n2. PM user (pending - admin will approve):');
+console.log('\n2. PM user (active - admin will adjust role if needed):');
 const pmId = await upsertUser({
   name: 'PM Lead',
   email: 'pm@agileai.com',
   password: 'Pm1234!',
-  role: 'developer',   // starts as developer, admin will change role
-  status: 'pending',
+  role: 'pm',
+  status: 'active',
 });
 
 console.log('\n3. Developer 1 (pending):');

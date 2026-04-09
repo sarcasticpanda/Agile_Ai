@@ -4,7 +4,6 @@
  * No external AI API required — learns from your team's own history.
  */
 import Sprint from '../models/Sprint.model.js';
-import Task from '../models/Task.model.js';
 import Project from '../models/Project.model.js';
 
 const RISK_WEIGHTS = {
@@ -29,20 +28,22 @@ export const calculateSprintRisk = async (sprintId) => {
 
   // Get historical velocity for this project (last 5 completed sprints)
   const completedSprints = await Sprint.find({
-    project: sprint.project,
+    projectId: sprint.projectId,
     status: 'completed',
     _id: { $ne: sprintId },
   })
-    .sort({ endDate: -1 })
+    .sort({ completedAt: -1, endDate: -1 })
     .limit(5)
     .lean();
 
   const avgVelocity =
     completedSprints.length > 0
-      ? completedSprints.reduce((s, sp) => s + (sp.velocity || 0), 0) / completedSprints.length
+      ? completedSprints.reduce((sum, sp) => sum + (sp.completedPoints || sp.velocity || 0), 0) /
+        completedSprints.length
       : 40; // Default assumption if no history
 
-  const totalPoints = tasks.reduce((s, t) => s + (t.storyPoints || 0), 0);
+  const tasksPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+  const totalPoints = sprint.committedPoints && sprint.committedPoints > 0 ? sprint.committedPoints : tasksPoints;
 
   const factors = [];
   let totalRisk = 0;
@@ -155,8 +156,8 @@ export const calculateSprintRisk = async (sprintId) => {
   let velocityTrendRisk = 20;
   let velocityMsg = 'Not enough historical data to detect velocity trends.';
   if (completedSprints.length >= 3) {
-    const recent = completedSprints.slice(0, 2).map((s) => s.velocity || 0);
-    const older = completedSprints.slice(2).map((s) => s.velocity || 0);
+    const recent = completedSprints.slice(0, 2).map((s) => s.completedPoints || s.velocity || 0);
+    const older = completedSprints.slice(2).map((s) => s.completedPoints || s.velocity || 0);
     const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
     const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
     const trendPct = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0;
@@ -196,7 +197,7 @@ export const calculateSprintRisk = async (sprintId) => {
     );
     const workingDays = Math.round(durationDays * (5 / 7)); // Approximate weekdays
     const ptsPerDay = workingDays > 0 ? totalPoints / workingDays : totalPoints;
-    const teamSize = (await Project.findById(sprint.project).lean())?.members?.length || 3;
+    const teamSize = (await Project.findById(sprint.projectId).lean())?.members?.length || 3;
     const ptsPerPersonPerDay = ptsPerDay / teamSize;
 
     if (ptsPerPersonPerDay <= 2) {

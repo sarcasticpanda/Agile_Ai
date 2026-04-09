@@ -2,21 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import useProjectStore from '../../store/projectStore';
-import { Layers, Bolt, Activity, Users, Plus } from 'lucide-react';
+import { Layers, Bolt, Activity, Users, Plus, AlertTriangle, UserCheck, UserPlus } from 'lucide-react';
 import axiosInstance from '../../api/axiosInstance';
 import { getSprints } from '../../api/sprints.api';
 import CreateSprintModal from '../../components/modals/CreateSprintModal';
 
 export const PmDashboardPage = () => {
   const { user } = useAuthStore();
-  const { activeProject } = useProjectStore();
+  const { activeProject, setActiveProject } = useProjectStore();
   const navigate = useNavigate();
+  const resolveProjectId = (projectLike) =>
+    typeof projectLike === 'string' ? projectLike : projectLike?._id || null;
 
   const [metrics, setMetrics] = useState({
     projectCount: 0,
     activeSprintCount: 0,
     velocity: 0
   });
+  const [teamOverview, setTeamOverview] = useState({
+    rosterCount: 0,
+    poolCount: 0,
+    openTasks: 0,
+    overloadedMembers: 0,
+  });
+  const [myProjects, setMyProjects] = useState([]);
   
   const [currentSprint, setCurrentSprint] = useState(null);
   const [sprintProgress, setSprintProgress] = useState({ completed: 0, remaining: 0, percent: 0 });
@@ -28,16 +37,41 @@ export const PmDashboardPage = () => {
 
   const fetchDashboardData = async () => {
     try {
+      const [projRes, rosterRes, poolRes] = await Promise.all([
+        axiosInstance.get('/projects'),
+        axiosInstance.get('/pm/my-developers').catch(() => ({ data: { data: [] } })),
+        axiosInstance.get('/pm/free-pool').catch(() => ({ data: { data: [] } })),
+      ]);
+
       // Get all projects for count
-      const projRes = await axiosInstance.get('/projects');
       const projects = projRes.data?.data || [];
+      setMyProjects(projects);
+
+      const roster = rosterRes?.data?.data || [];
+      const pool = poolRes?.data?.data || [];
+      const openTasks = roster.reduce((sum, member) => sum + Number(member?.openTaskCount || 0), 0);
+      const overloadedMembers = roster.filter((member) => Number(member?.openTaskCount || 0) >= 6).length;
+
+      setTeamOverview({
+        rosterCount: roster.length,
+        poolCount: pool.length,
+        openTasks,
+        overloadedMembers,
+      });
+
+      const currentProjectId = resolveProjectId(activeProject);
+      const selectedProjectId = currentProjectId || projects[0]?._id || null;
+      if (!currentProjectId && projects[0]) {
+        setActiveProject(projects[0]);
+      }
       
       let activeSprints = 0;
+      let active = null;
       
-      if (activeProject) {
-        const sprintRes = await getSprints(activeProject._id);
+      if (selectedProjectId) {
+        const sprintRes = await getSprints(selectedProjectId);
         const sprints = sprintRes.data || [];
-        const active = sprints.find(s => s.status === 'active');
+        active = sprints.find(s => s.status === 'active');
         
         if (active) {
           activeSprints = 1;
@@ -58,13 +92,23 @@ export const PmDashboardPage = () => {
           });
         } else {
           setCurrentSprint(null);
+          setSprintProgress({ completed: 0, remaining: 0, percent: 0 });
         }
+      } else {
+        setCurrentSprint(null);
+        setSprintProgress({ completed: 0, remaining: 0, percent: 0 });
       }
+
+      const sprintVelocity = active
+        ? (active.tasks || [])
+            .filter((t) => t.status === 'done' || t.status === 'Done')
+            .reduce((sum, t) => sum + (Number(t.storyPoints) || 0), 0)
+        : 0;
 
       setMetrics({
         projectCount: projects.length,
         activeSprintCount: activeSprints,
-        velocity: currentSprint?.velocity || 0 // Very simplified velocity for now
+        velocity: sprintVelocity
       });
 
     } catch (err) {
@@ -145,7 +189,7 @@ export const PmDashboardPage = () => {
         </div>
         
         <div className="bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-border-dark flex flex-col justify-between hover:shadow-md transition-shadow">
-          <span className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Team Velocity</span>
+          <span className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Delivered Story Points</span>
           <div className="flex items-end justify-between mt-4">
             <span className="text-4xl font-black text-slate-800 dark:text-white">{metrics.velocity}<span className="text-xl text-slate-400 ml-1">pts</span></span>
             <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center">
@@ -187,7 +231,23 @@ export const PmDashboardPage = () => {
                 </div>
               </div>
               
-              <button onClick={() => navigate('/pm/board')} className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-6 py-2.5 rounded-lg font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors whitespace-nowrap w-full lg:w-auto shadow-sm">
+              <button
+                onClick={() => {
+                  const selectedProjectId = resolveProjectId(activeProject) || myProjects[0]?._id;
+                  if (!selectedProjectId) {
+                    navigate('/pm/projects');
+                    return;
+                  }
+
+                  if (currentSprint?._id) {
+                    navigate(`/pm/projects/${selectedProjectId}/sprints/${currentSprint._id}`);
+                    return;
+                  }
+
+                  navigate(`/pm/projects/${selectedProjectId}/board`);
+                }}
+                className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 px-6 py-2.5 rounded-lg font-bold hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors whitespace-nowrap w-full lg:w-auto shadow-sm"
+              >
                  View Kanban Board
               </button>
             </div>
@@ -210,13 +270,48 @@ export const PmDashboardPage = () => {
             <h3 className="text-xl font-bold text-slate-800 dark:text-white">My Team Overview</h3>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Status of your direct reports and available talent pool</p>
           </div>
-          <button className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline hidden sm:block">
+          <button
+            className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline hidden sm:block"
+            onClick={() => navigate('/pm/team')}
+          >
             Manage Team &rarr;
           </button>
         </div>
-        <div className="bg-white dark:bg-card-dark p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-border-dark flex flex-col items-center justify-center min-h-[200px]">
-           <Users size={40} className="text-slate-300 dark:text-slate-600 mb-4" />
-           <p className="text-slate-500 dark:text-slate-400 font-medium">Team layout component pending Phase 4.2...</p>
+        <div className="bg-white dark:bg-card-dark p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-border-dark min-h-[200px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-slate-200 dark:border-border-dark bg-slate-50 dark:bg-zinc-900/40 p-4">
+              <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <UserCheck size={14} /> My Roster
+              </div>
+              <div className="text-2xl font-black text-slate-800 dark:text-white mt-2">{teamOverview.rosterCount}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-border-dark bg-slate-50 dark:bg-zinc-900/40 p-4">
+              <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <UserPlus size={14} /> Free Pool
+              </div>
+              <div className="text-2xl font-black text-slate-800 dark:text-white mt-2">{teamOverview.poolCount}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-border-dark bg-slate-50 dark:bg-zinc-900/40 p-4">
+              <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <Activity size={14} /> Open Tasks
+              </div>
+              <div className="text-2xl font-black text-slate-800 dark:text-white mt-2">{teamOverview.openTasks}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-border-dark bg-slate-50 dark:bg-zinc-900/40 p-4">
+              <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                <AlertTriangle size={14} /> Overloaded
+              </div>
+              <div className="text-2xl font-black text-slate-800 dark:text-white mt-2">{teamOverview.overloadedMembers}</div>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => navigate('/pm/team')}
+              className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              Open full team manager &rarr;
+            </button>
+          </div>
         </div>
       </section>
 

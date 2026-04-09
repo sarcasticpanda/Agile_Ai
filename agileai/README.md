@@ -94,6 +94,100 @@ If you already have MongoDB running locally and prefer to execute the services w
 	- UI → whatever port Vite reports (default 5173).
 	- API health check → `curl http://localhost:<PORT>/` should print `AgileAI API Phase 1 is running...`.
 
+### AI Retraining Data Export (Phase 4 kickoff)
+To start retraining work, export production-shaped datasets from MongoDB:
+
+1. Open a terminal in `agileai/server`
+2. Run:
+	```bash
+	npm run export:training-data
+	```
+
+This command writes CSV files into `../ai-service/data_exports/`:
+- `risk_training_from_mongo_<timestamp>.csv`
+- `effort_training_from_mongo_<timestamp>.csv`
+- `burnout_features_unlabeled_<timestamp>.csv`
+- `export_summary_<timestamp>.json`
+
+Notes:
+- Burnout exports are intentionally unlabeled (`burnout_label` empty) by default.
+- You can train burnout with manual labels, or use the controlled heuristic auto-label pipeline.
+- You can override output path with `AI_EXPORT_DIR`.
+- You can override burnout window size with `BURNOUT_WINDOW_DAYS` (default 30).
+
+### AI Candidate Retraining Runner (Phase 4 Task 3)
+After export, train versioned candidate models without overwriting production by default:
+
+1. Open a terminal in `agileai/server`
+2. Run:
+	```bash
+	npm run retrain:candidate
+	```
+
+What it does:
+- loads the existing base training datasets from `ai-service/repo_cache`,
+- appends the latest exported Mongo CSVs from `ai-service/data_exports`,
+- trains risk + effort models into a versioned candidate folder:
+	`../ai-service/models/candidates/candidate_<timestamp>_<version>/`
+- writes `candidate_manifest.json` + `metrics.json` in that folder.
+
+Important safety behavior:
+- production model files in `ai-service/models/` are not touched by default.
+- to promote a candidate into production (with automatic backup), run:
+	```bash
+	npm run retrain:promote
+	```
+
+Advanced usage:
+- run directly with custom trial count:
+	```bash
+	python ../ai-service/retrain_candidates.py --use-exported-data --trials 10
+	```
+- omit export data (base datasets only): remove `--use-exported-data`.
+
+### Burnout Model Training (Phase 4 Task 4)
+Train the missing burnout model so all three AI model pipelines are active (risk, effort, burnout):
+
+1. Open a terminal in `agileai/server`
+2. Run:
+	```bash
+	npm run retrain:burnout
+	```
+
+What this does:
+- loads latest `burnout_features_unlabeled_*.csv` export,
+- builds labels from curated `burnout_label` if present,
+- otherwise uses an explicit heuristic auto-label strategy,
+- trains and writes:
+	- `../ai-service/models/burnout_model.pkl`
+	- `../ai-service/models/burnout_features.pkl`
+	- `../ai-service/models/burnout_metadata.json`
+	- `../ai-service/models/burnout_metrics.json`
+
+Then run full Phase-4 retrain pipeline in one command:
+	```bash
+	npm run retrain:all
+	```
+
+This runs export + candidate retrain (risk/effort) + burnout retrain.
+
+### AI Reality Verification (no static placeholders)
+To validate that website-facing AI values come from live model predictions and not static stubs:
+
+1. Ensure backend (`5001`) and AI service (`8001`) are running.
+2. Run from `agileai/server`:
+	```bash
+	npm run verify:ai-reality
+	```
+
+This check will:
+- create controlled project/sprint/tasks,
+- run effort predictions for varied task inputs,
+- assert outputs are not constant,
+- verify persisted AI fields on Task/Sprint,
+- mutate sprint risk inputs and verify risk features react,
+- verify insights endpoint returns model-derived factors.
+
 ## 🏗 Architecture Blueprint (Preparing for Phase 2)
 The codebase strictly isolates `aiProxy.service.js` and `ai.routes.js`. Currently, they simulate analytical delays and return hardcoded mock intelligence (found inside `AnalyticsPage` and `BacklogPage` UI badging). 
 

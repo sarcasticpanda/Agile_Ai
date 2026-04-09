@@ -9,6 +9,10 @@ export default {
     extend: {
       colors: {
         primary: "#630ed4",
+        "card-light": "#FFFFFF",
+        "card-dark": "#12151c",
+        "border-light": "#e2e8f0",
+        "border-dark": "#2a3242",
         "background-light": "#FFFFFF",
         "background-dark": "#0A0A0B",
         "on-primary-fixed": "#25005a",

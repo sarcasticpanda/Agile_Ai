@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { getTaskPriorityColor, getTaskStatusColor } from '../utils/statusColors';
 import { formatDate, formatTimeAgo } from '../utils/dateUtils';
 import * as tasksApi from '../api/tasks.api';
+import * as projectsApi from '../api/projects.api';
 import { toast } from '../components/ui/Toast';
 import useAuthStore from '../store/authStore';
 
@@ -14,6 +15,36 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState('');
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState([]);
+  const [currentAssigneeIds, setCurrentAssigneeIds] = useState([]);
+  const isDevOnly = user?.role?.toLowerCase() === 'developer';
+
+  const toIdString = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object' && value._id) return String(value._id);
+    if (typeof value.toString === 'function') return String(value.toString());
+    return null;
+  };
+
+  const taskHasUserAssignment = (taskRecord, userId) => {
+    if (!taskRecord || !userId) return false;
+    const uid = String(userId);
+
+    if (toIdString(taskRecord.assignee) === uid) return true;
+
+    if (Array.isArray(taskRecord.assignees)) {
+      const inAssignees = taskRecord.assignees.some((entry) => toIdString(entry?.user) === uid);
+      if (inAssignees) return true;
+    }
+
+    if (Array.isArray(taskRecord.subtasks)) {
+      const inSubtasks = taskRecord.subtasks.some((subtask) => toIdString(subtask?.assignee) === uid);
+      if (inSubtasks) return true;
+    }
+
+    return false;
+  };
 
   const { data: response, isLoading } = useQuery({
     queryKey: ['task', taskId],
@@ -21,7 +52,26 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
     enabled: !!taskId && isOpen,
   });
 
+  const { data: tasksListResponse } = useQuery({
+    queryKey: ['tasks', projectId, 'for-blocked-by'],
+    queryFn: () => tasksApi.getTasks({ projectId, sprintId: undefined }),
+    enabled: !!projectId && isOpen,
+  });
+
+  const { data: projectMembersResponse } = useQuery({
+    queryKey: ['project-members-task-detail', projectId],
+    queryFn: () => projectsApi.getProjectMembers(projectId),
+    enabled: !!projectId && isOpen && !isDevOnly,
+  });
+
   const task = response?.data;
+  const projectMembers = projectMembersResponse?.data || [];
+  const assignableMembers = (projectMembers || []).filter((member) => member?.user && member.role !== 'pm');
+  const allProjectTasks = tasksListResponse?.data || [];
+  const blockedByIds = (task?.blockedBy || []).map((t) => (typeof t === 'string' ? t : t?._id || String(t)));
+  const candidateBlockers = (allProjectTasks || [])
+    .filter((t) => t?._id && t._id !== taskId)
+    .filter((t) => !blockedByIds.includes(t._id));
 
   const updateStatusMutation = useMutation({
     mutationFn: (newStatus) => tasksApi.updateTaskStatus({ id: taskId, status: newStatus }),
@@ -50,6 +100,53 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
     addCommentMutation.mutate(commentText.trim());
   };
 
+  const updateBlockedByMutation = useMutation({
+    mutationFn: (newBlockedByIds) => tasksApi.updateTask({ id: taskId, data: { blockedBy: newBlockedByIds } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['task', taskId]);
+      if (projectId) {
+        queryClient.invalidateQueries(['tasks', projectId]);
+        queryClient.invalidateQueries(['tasks', projectId, 'for-blocked-by']);
+      }
+      toast.success('Dependencies updated');
+    },
+    onError: () => toast.error('Failed to update dependencies'),
+  });
+
+  const updateAssigneesMutation = useMutation({
+    mutationFn: (nextAssigneeIds) => {
+      const normalizedIds = Array.from(new Set((nextAssigneeIds || []).filter(Boolean)));
+      const payload = {
+        assignee: normalizedIds[0] || null,
+        assignees: normalizedIds.map((id) => ({
+          user: id,
+          contributionPercent: Number((100 / normalizedIds.length).toFixed(2)),
+        })),
+      };
+      return tasksApi.updateTask({ id: taskId, data: payload });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['task', taskId]);
+      if (projectId) {
+        queryClient.invalidateQueries(['tasks', projectId]);
+        queryClient.invalidateQueries(['my-tasks', user?._id]);
+      }
+      toast.success('Task assignment updated');
+    },
+    onError: () => toast.error('Failed to update task assignment'),
+  });
+
+  const handleAddBlocker = (blockerId) => {
+    if (!blockerId) return;
+    const next = Array.from(new Set([...(blockedByIds || []), blockerId]));
+    updateBlockedByMutation.mutate(next);
+  };
+
+  const handleRemoveBlocker = (blockerId) => {
+    const next = (blockedByIds || []).filter((id) => id !== blockerId);
+    updateBlockedByMutation.mutate(next);
+  };
+
   // Handle escape key
   useEffect(() => {
     const handleEsc = (e) => {
@@ -64,6 +161,35 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
     setCommentText('');
   }, [taskId]);
 
+  useEffect(() => {
+    if (!task) {
+      setSelectedAssigneeIds([]);
+      setCurrentAssigneeIds([]);
+      return;
+    }
+
+    const ids = new Set();
+
+    if (task.assignee) {
+      ids.add(typeof task.assignee === 'string' ? task.assignee : task.assignee._id);
+    }
+
+    if (Array.isArray(task.assignees)) {
+      task.assignees.forEach((entry) => {
+        const userId = entry?.user
+          ? typeof entry.user === 'string'
+            ? entry.user
+            : entry.user._id
+          : null;
+        if (userId) ids.add(userId);
+      });
+    }
+
+    const normalized = Array.from(ids);
+    setSelectedAssigneeIds(normalized);
+    setCurrentAssigneeIds(normalized);
+  }, [task]);
+
   if (!isOpen) return null;
 
   const formatLifecycleDate = (date) => {
@@ -71,6 +197,109 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
     return new Date(date).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const aiSp = typeof task?.aiEstimatedStoryPoints === 'number' ? task.aiEstimatedStoryPoints : null;
+  const aiHours = typeof task?.aiEstimatedHours === 'number' ? task.aiEstimatedHours : null;
+  const aiSpAt = task?.aiEstimatedStoryPointsAt || null;
+  const aiHoursBaseline = typeof task?.aiHoursPerPointBaseline === 'number' ? task.aiHoursPerPointBaseline : null;
+  const aiHoursSampleCount = typeof task?.aiHoursPerPointSampleCount === 'number' ? task.aiHoursPerPointSampleCount : null;
+  const aiModel = task?.aiEffortModelVersion || null;
+  const canCurrentUserUpdateStatus = !isDevOnly || taskHasUserAssignment(task, user?._id);
+  const currentContributorNames =
+    Array.isArray(task?.assignees) && task.assignees.length > 0
+      ? task.assignees
+          .map((entry) => entry?.user?.name)
+          .filter(Boolean)
+      : task?.assignee?.name
+        ? [task.assignee.name]
+        : [];
+  const activeTimers = Array.isArray(task?.activeTimers) ? task.activeTimers : [];
+  const worklogContributionSummary = (() => {
+    const logs = Array.isArray(task?.worklogs) ? task.worklogs : [];
+    const byUser = new Map();
+
+    logs.forEach((log) => {
+      const userName = log?.user?.name || 'Unknown';
+      const hours = Number(log?.hours || 0);
+      if (!Number.isFinite(hours) || hours <= 0) return;
+      byUser.set(userName, (byUser.get(userName) || 0) + hours);
+    });
+
+    return Array.from(byUser.entries())
+      .map(([userName, hours]) => ({ userName, hours: Number(hours.toFixed(2)) }))
+      .sort((a, b) => b.hours - a.hours);
+  })();
+
+  const normalizeIdList = (ids = []) =>
+    Array.from(new Set((ids || []).map((id) => String(id)).filter(Boolean))).sort();
+
+  const hasAssignmentChanges =
+    normalizeIdList(selectedAssigneeIds).join('|') !== normalizeIdList(currentAssigneeIds).join('|');
+
+  const formatStatusLabel = (status) => {
+    const value = String(status || '').toLowerCase();
+    if (value === 'todo') return 'To Do';
+    if (value === 'inprogress') return 'In Progress';
+    if (value === 'review') return 'In Review';
+    if (value === 'done') return 'Done';
+    return status || 'Unknown';
+  };
+
+  const toggleAssignee = (memberId) => {
+    setSelectedAssigneeIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const saveAssignees = () => {
+    if (!hasAssignmentChanges) {
+      toast.error('No assignment changes to save');
+      return;
+    }
+
+    if (selectedAssigneeIds.length === 0) {
+      toast.error('Select at least one contributor or use Unassign All explicitly');
+      return;
+    }
+
+    const currentNames = assignableMembers
+      .filter((member) => currentAssigneeIds.includes(member?.user?._id))
+      .map((member) => member?.user?.name)
+      .filter(Boolean);
+
+    const nextNames = assignableMembers
+      .filter((member) => selectedAssigneeIds.includes(member?.user?._id))
+      .map((member) => member?.user?.name)
+      .filter(Boolean);
+
+    const proceed = window.confirm(
+      `Update assignment?\n\nCurrent: ${currentNames.length > 0 ? currentNames.join(', ') : 'Unassigned'}\nNext: ${nextNames.join(', ')}`
+    );
+
+    if (!proceed) return;
+
+    updateAssigneesMutation.mutate(selectedAssigneeIds, {
+      onSuccess: () => {
+        setCurrentAssigneeIds(Array.from(new Set(selectedAssigneeIds.map((id) => String(id)))));
+      },
+    });
+  };
+
+  const resetAssigneeSelection = () => {
+    setSelectedAssigneeIds(currentAssigneeIds);
+  };
+
+  const clearAllAssignees = () => {
+    const proceed = window.confirm('Unassign all contributors from this task?');
+    if (!proceed) return;
+
+    updateAssigneesMutation.mutate([], {
+      onSuccess: () => {
+        setCurrentAssigneeIds([]);
+        setSelectedAssigneeIds([]);
+      },
     });
   };
 
@@ -111,7 +340,7 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                   <select 
                     value={task.status}
                     onChange={(e) => updateStatusMutation.mutate(e.target.value)}
-                    disabled={updateStatusMutation.isPending || (user?.role?.toLowerCase() === 'developer' && task.assignee?._id !== user?._id && task.assignee !== user?._id)}
+                    disabled={updateStatusMutation.isPending || !canCurrentUserUpdateStatus}
                     className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider outline-none cursor-pointer border border-transparent hover:border-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTaskStatusColor(task.status)}`}
                   >
                     <option value="todo">TO DO</option>
@@ -119,6 +348,11 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                     <option value="review">IN REVIEW</option>
                     <option value="done">DONE</option>
                   </select>
+                  {isDevOnly && !canCurrentUserUpdateStatus && (
+                    <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
+                      Only assigned contributors can change this status.
+                    </span>
+                  )}
                   <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${getTaskPriorityColor(task.priority)}`}>
                     {task.priority} Priority
                   </span>
@@ -143,6 +377,58 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                        <Avatar src={task.assignee?.avatar} fallback={task.assignee?.name || 'UA'} size="sm" />
                        <span className="text-sm font-medium text-slate-900">{task.assignee?.name || 'Unassigned'}</span>
                      </div>
+                     {!isDevOnly && assignableMembers.length > 0 && (
+                       <div className="mt-4 space-y-2">
+                         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Reassign Contributors</p>
+                         <p className="text-[11px] text-slate-500">
+                           Current: {currentContributorNames.length > 0 ? currentContributorNames.join(', ') : 'Unassigned'}
+                         </p>
+                         <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                           {assignableMembers.map((member) => {
+                             const memberId = member.user?._id;
+                             const memberName = member.user?.name || 'Unknown';
+                             const checked = selectedAssigneeIds.includes(memberId);
+                             return (
+                               <label key={memberId} className="flex items-center gap-2 text-sm text-slate-700">
+                                 <input
+                                   type="checkbox"
+                                   className="rounded border-slate-300"
+                                   checked={checked}
+                                   disabled={updateAssigneesMutation.isPending}
+                                   onChange={() => toggleAssignee(memberId)}
+                                 />
+                                 <span>{memberName}</span>
+                               </label>
+                             );
+                           })}
+                         </div>
+                         <div className="flex items-center gap-2 pt-1">
+                           <Button
+                             size="sm"
+                             variant="ghost"
+                             onClick={resetAssigneeSelection}
+                             disabled={updateAssigneesMutation.isPending || !hasAssignmentChanges}
+                           >
+                             Reset
+                           </Button>
+                           <Button
+                             size="sm"
+                             variant="outline"
+                             onClick={clearAllAssignees}
+                             disabled={updateAssigneesMutation.isPending || currentAssigneeIds.length === 0}
+                           >
+                             Unassign All
+                           </Button>
+                           <Button
+                             size="sm"
+                             onClick={saveAssignees}
+                             disabled={updateAssigneesMutation.isPending || !hasAssignmentChanges || selectedAssigneeIds.length === 0}
+                           >
+                             {updateAssigneesMutation.isPending ? 'Saving...' : 'Save Assignment'}
+                           </Button>
+                         </div>
+                       </div>
+                     )}
                   </div>
                    <div>
                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Reporter</h3>
@@ -151,6 +437,97 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                        <span className="text-sm font-medium text-slate-900">{task.reporter?.name || 'System'}</span>
                      </div>
                    </div>
+                </div>
+
+                {/* AI Effort Estimate (persisted) */}
+                <div className="border-t border-slate-200 pt-6 mb-8">
+                  <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <Zap size={18} /> AI Effort Estimate
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Predicted Story Points</span>
+                      <span className="text-sm font-extrabold text-slate-800">
+                        {aiSp == null ? '—' : aiSp.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Estimated Hours</span>
+                      <span className="text-sm font-extrabold text-slate-800">
+                        {aiHours == null ? '—' : aiHours.toFixed(1)}
+                      </span>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        {aiHoursBaseline == null
+                          ? 'Hours baseline: not available yet'
+                          : `Baseline: ${aiHoursBaseline.toFixed(2)} hrs/pt (n=${aiHoursSampleCount ?? 0})`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-xs text-slate-500">
+                    {aiSpAt ? `Computed: ${new Date(aiSpAt).toLocaleString()}` : 'Computed: —'}
+                    {aiModel ? ` • Model: ${String(aiModel).slice(0, 12)}…` : ''}
+                  </div>
+                </div>
+
+                {/* Dependencies / Blockers */}
+                <div className="border-t border-slate-200 pt-6 mb-8">
+                  <h3 className="text-base font-bold text-slate-900 mb-4">Blocked by</h3>
+                  {blockedByIds.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No blockers set.</p>
+                  ) : (
+                    <div className="space-y-2 mb-3">
+                      {blockedByIds.map((id) => {
+                        const blockerTask = (allProjectTasks || []).find((t) => t?._id === id);
+                        const label = blockerTask
+                          ? `${blockerTask.title} (AGL-${String(blockerTask._id).slice(-4)})`
+                          : `AGL-${String(id).slice(-4)}`;
+
+                        return (
+                          <div key={id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                            <span className="text-sm text-slate-700 font-medium truncate">{label}</span>
+                            {!isDevOnly && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveBlocker(id)}
+                                disabled={updateBlockedByMutation.isPending}
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!isDevOnly && (
+                    <div className="flex items-center gap-3">
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          handleAddBlocker(e.target.value);
+                          e.target.value = '';
+                        }}
+                        disabled={updateBlockedByMutation.isPending || candidateBlockers.length === 0}
+                        className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm outline-none"
+                      >
+                        <option value="" disabled>
+                          {candidateBlockers.length === 0 ? 'No available tasks to add' : 'Add blocker task...'}
+                        </option>
+                        {candidateBlockers.map((t) => (
+                          <option key={t._id} value={t._id}>
+                            {t.title} (AGL-{String(t._id).slice(-4)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {isDevOnly && (
+                    <p className="text-xs text-slate-400 mt-2">Only PM/Admin can change dependencies.</p>
+                  )}
                 </div>
 
                 {/* Lifecycle Dates */}
@@ -191,13 +568,24 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                       <History size={18} /> Status History
                     </h3>
                     <div className="space-y-3">
-                      {task.statusHistory.map((entry, i) => (
-                        <div key={i} className="flex items-center gap-3 text-sm">
-                          <div className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></div>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${getTaskStatusColor(entry.from)}`}>{entry.from}</span>
-                          <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${getTaskStatusColor(entry.to)}`}>{entry.to}</span>
-                          <span className="text-[10px] text-slate-400 ml-auto">{formatLifecycleDate(entry.changedAt)}</span>
+                      {[...task.statusHistory].reverse().map((entry, i) => (
+                        <div key={`${entry?.changedAt || i}-${i}`} className="flex items-start gap-3 text-sm">
+                          <div className="w-2 h-2 mt-1.5 rounded-full bg-indigo-500 flex-shrink-0"></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${getTaskStatusColor(entry.from)}`}>
+                                {formatStatusLabel(entry.from)}
+                              </span>
+                              <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${getTaskStatusColor(entry.to)}`}>
+                                {formatStatusLabel(entry.to)}
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                by {entry?.changedBy?.name || 'System'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">{formatLifecycleDate(entry.changedAt)}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -205,6 +593,44 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                 )}
 
                 {/* Worklogs */}
+                {activeTimers.length > 0 && (
+                  <div className="border-t border-slate-200 pt-6 mb-8">
+                    <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Activity size={18} /> Active Work Sessions
+                    </h3>
+                    <div className="space-y-2">
+                      {activeTimers.map((timer, i) => (
+                        <div key={`${timer?.user?._id || timer?.user || i}-${i}`} className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-emerald-800">{timer?.user?.name || 'Contributor'}</span>
+                            <span className="text-[10px] text-emerald-600">Started {formatLifecycleDate(timer?.startedAt)}</span>
+                          </div>
+                          <div className="text-[11px] text-emerald-700">
+                            {(timer?.activityType || 'implementation').replace('-', ' ')}
+                            {timer?.note ? ` • ${timer.note}` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {worklogContributionSummary.length > 0 && (
+                  <div className="border-t border-slate-200 pt-6 mb-8">
+                    <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Clock size={18} /> Contribution Summary
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {worklogContributionSummary.map((entry) => (
+                        <div key={entry.userName} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-700">{entry.userName}</span>
+                          <span className="text-xs font-bold text-indigo-700">{entry.hours}h</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {task.worklogs && task.worklogs.length > 0 && (
                   <div className="border-t border-slate-200 pt-6 mb-8">
                     <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -216,6 +642,26 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs font-bold text-slate-700">{log.user?.name || 'User'}</span>
                             <span className="text-[10px] text-slate-400">{formatLifecycleDate(log.createdAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                              {(log.activityType || 'implementation').replace('-', ' ')}
+                            </span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                              {log.outcome || 'progress'}
+                            </span>
+                            {log.progressDelta !== null && log.progressDelta !== undefined && (
+                              <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                                Progress {Number(log.progressDelta) > 0 ? '+' : ''}{log.progressDelta}%
+                              </span>
+                            )}
+                            {log.source === 'time-range' && log.startedAt && log.endedAt && (
+                              <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                                {new Date(log.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {' - '}
+                                {new Date(log.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-slate-600">
                             <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">{log.hours}h</span>

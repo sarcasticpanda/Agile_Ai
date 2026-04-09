@@ -5,6 +5,9 @@ import useAuthStore from '../../store/authStore';
 import useProjectStore from '../../store/projectStore';
 import axiosInstance from '../../api/axiosInstance';
 
+const resolveProjectId = (projectLike) =>
+  typeof projectLike === 'string' ? projectLike : projectLike?._id || '';
+
 export const PMLayout = () => {
   const { user, logout } = useAuthStore();
   const { activeProject, setActiveProject } = useProjectStore();
@@ -24,37 +27,73 @@ export const PMLayout = () => {
   });
   const projects = projectsRes?.data || [];
 
-  // Resolve project name from activeProject (could be object or string ID)
+  const storeProjectId = resolveProjectId(activeProject);
+  const activeProjectId = params.projectId || storeProjectId;
+
+  // Keep project context valid and synced with the store and current route.
   useEffect(() => {
-    const projId = params.projectId || (typeof activeProject === 'string' ? activeProject : activeProject?._id);
-    if (!projId) {
+    if (!Array.isArray(projects) || projects.length === 0) {
       setProjectName('');
       return;
     }
-    // If activeProject is an object with title, use it directly
-    if (activeProject?.title) {
-      setProjectName(activeProject.title);
+
+    if (params.projectId) {
+      const routeProject = projects.find((p) => p._id === params.projectId);
+      if (!routeProject) {
+        setProjectName('');
+        return;
+      }
+
+      setProjectName(routeProject.title || routeProject.name || '');
+      if (
+        storeProjectId !== routeProject._id ||
+        typeof activeProject === 'string' ||
+        !activeProject?.title
+      ) {
+        setActiveProject(routeProject);
+      }
       return;
     }
-    // Otherwise fetch the project name
-    axiosInstance.get(`/projects/${projId}`)
-      .then(res => {
-        const proj = res.data?.data;
-        if (proj) {
-          setProjectName(proj.title || proj.name || '');
-          setActiveProject(proj); // Store the full object for future use
-        }
-      })
-      .catch(() => setProjectName(''));
-  }, [params.projectId, activeProject]);
+
+    const current = projects.find((p) => p._id === storeProjectId) || projects[0];
+    if (!current) {
+      setProjectName('');
+      return;
+    }
+
+    setProjectName(current.title || current.name || '');
+    if (storeProjectId !== current._id || typeof activeProject === 'string' || !activeProject?.title) {
+      setActiveProject(current);
+    }
+  }, [projects, params.projectId, storeProjectId, activeProject, setActiveProject]);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Build dynamic paths based on active project
-  const activeProjectId = params.projectId || (typeof activeProject === 'string' ? activeProject : activeProject?._id);
+  const navigateForProjectContext = (projectId) => {
+    const path = location.pathname;
+
+    if (path.includes('/pm/projects/') && path.includes('/backlog')) {
+      navigate(`/pm/projects/${projectId}/backlog`);
+      return;
+    }
+
+    if (path.includes('/pm/projects/') && (path.includes('/board') || path.includes('/sprints/'))) {
+      navigate(`/pm/projects/${projectId}/board`);
+      return;
+    }
+
+    if (path === '/pm/backlog') {
+      navigate(`/pm/projects/${projectId}/backlog`);
+      return;
+    }
+
+    if (path === '/pm/board') {
+      navigate(`/pm/projects/${projectId}/board`);
+    }
+  };
 
   const navItems = [
     { name: 'Dashboard', icon: 'dashboard', path: '/pm/dashboard' },
@@ -138,8 +177,7 @@ export const PMLayout = () => {
                     if (selected) {
                       setActiveProject(selected);
                       setProjectName(selected.title);
-                      // Optionally keep them on the exact same nested path if it exists, otherwise just board
-                      navigate(`/pm/projects/${selected._id}/board`);
+                      navigateForProjectContext(selected._id);
                     }
                   }}
                   className="bg-transparent text-lg font-black text-slate-800 dark:text-white outline-none cursor-pointer hover:text-primary transition-colors pr-2"

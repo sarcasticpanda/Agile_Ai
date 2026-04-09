@@ -1,7 +1,178 @@
 import User from '../models/User.model.js';
 import Project from '../models/Project.model.js';
+import Sprint from '../models/Sprint.model.js';
+import Task from '../models/Task.model.js';
 import Notification from '../models/Notification.model.js';
 import { apiResponse } from '../utils/apiResponse.js';
+import {
+  queueProjectActiveSprintRiskRefresh,
+  queueUserAiBurnoutRefresh,
+} from '../services/aiRefresh.service.js';
+
+const buildDeveloperAssignmentSummary = async (developerId) => {
+  const projects = await Project.find({
+    status: { $ne: 'archived' },
+    'members.user': developerId,
+  })
+    .select('_id title status')
+    .lean();
+
+  const taskQuery = {
+    $or: [
+      { assignee: developerId },
+      { 'assignees.user': developerId },
+      { 'subtasks.assignee': developerId },
+    ],
+  };
+
+  const assignedTasks = await Task.find(taskQuery).select('_id sprint status').lean();
+
+  const sprintIds = Array.from(
+    new Set(
+      assignedTasks
+        .map((task) => (task?.sprint ? String(task.sprint) : null))
+        .filter(Boolean)
+    )
+  );
+
+  let activeSprintCount = 0;
+  if (sprintIds.length > 0) {
+    activeSprintCount = await Sprint.countDocuments({
+      _id: { $in: sprintIds },
+      status: { $in: ['planning', 'active'] },
+    });
+  }
+
+  return {
+    projects,
+    projectCount: projects.length,
+    sprintCount: sprintIds.length,
+    activeSprintCount,
+    taskCount: assignedTasks.length,
+    openTaskCount: assignedTasks.filter((task) => String(task.status || '').toLowerCase() !== 'done').length,
+  };
+};
+
+const buildReleaseImpact = async ({ developerId, ownerId, includeAllProjects = false }) => {
+  const projectQuery = {
+    status: { $ne: 'archived' },
+    'members.user': developerId,
+  };
+
+  if (!includeAllProjects) {
+    projectQuery.owner = ownerId;
+  }
+
+  const relatedProjects = await Project.find(projectQuery).select('_id title').lean();
+  const projectIds = relatedProjects.map((p) => p._id);
+
+  if (projectIds.length === 0) {
+    return {
+      projectIds: [],
+      relatedProjects: [],
+      totalAssignments: 0,
+      activeSprintAssignments: 0,
+      activeSprintTaskSample: [],
+      canReleaseWithoutForce: true,
+    };
+  }
+
+  const activeSprints = await Sprint.find({
+    projectId: { $in: projectIds },
+    status: { $in: ['planning', 'active'] },
+  })
+    .select('_id title projectId status')
+    .lean();
+
+  const activeSprintIds = new Set(activeSprints.map((s) => String(s._id)));
+  const activeSprintById = new Map(activeSprints.map((s) => [String(s._id), s]));
+
+  const assignments = await Task.find({
+    project: { $in: projectIds },
+    $or: [
+      { assignee: developerId },
+      { 'assignees.user': developerId },
+      { 'subtasks.assignee': developerId },
+    ],
+  })
+    .select('_id title project sprint status')
+    .lean();
+
+  const activeAssignments = assignments.filter((task) =>
+    task?.sprint ? activeSprintIds.has(String(task.sprint)) : false
+  );
+
+  return {
+    projectIds,
+    relatedProjects,
+    totalAssignments: assignments.length,
+    activeSprintAssignments: activeAssignments.length,
+    activeSprintTaskSample: activeAssignments.slice(0, 5).map((task) => ({
+      _id: task._id,
+      title: task.title,
+      project: task.project,
+      sprint: activeSprintById.get(String(task.sprint))
+        ? {
+            _id: activeSprintById.get(String(task.sprint))._id,
+            title: activeSprintById.get(String(task.sprint)).title,
+            status: activeSprintById.get(String(task.sprint)).status,
+          }
+        : task.sprint,
+      status: task.status,
+    })),
+    canReleaseWithoutForce: activeAssignments.length === 0,
+  };
+};
+
+const unassignDeveloperFromProjects = async ({ developerId, projectIds = [] }) => {
+  if (!Array.isArray(projectIds) || projectIds.length === 0) return 0;
+
+  const uid = String(developerId);
+  const tasks = await Task.find({
+    project: { $in: projectIds },
+    $or: [
+      { assignee: developerId },
+      { 'assignees.user': developerId },
+      { 'subtasks.assignee': developerId },
+    ],
+  });
+
+  let changed = 0;
+
+  for (const task of tasks) {
+    let touched = false;
+
+    if (task.assignee && String(task.assignee) === uid) {
+      task.assignee = null;
+      touched = true;
+    }
+
+    if (Array.isArray(task.assignees) && task.assignees.length > 0) {
+      const nextAssignees = task.assignees.filter((entry) => String(entry?.user) !== uid);
+      if (nextAssignees.length !== task.assignees.length) {
+        task.assignees = nextAssignees;
+        touched = true;
+      }
+    }
+
+    if (Array.isArray(task.subtasks) && task.subtasks.length > 0) {
+      task.subtasks = task.subtasks.map((sub) => {
+        if (sub?.assignee && String(sub.assignee) === uid) {
+          touched = true;
+          return { ...sub.toObject(), assignee: null };
+        }
+        return sub;
+      });
+    }
+
+    if (touched) {
+      await task.save();
+      changed += 1;
+    }
+  }
+
+  return changed;
+};
 
 export const createDeveloper = async (req, res) => {
   try {
@@ -23,6 +194,8 @@ export const createDeveloper = async (req, res) => {
       if (project && project.owner.toString() === req.user._id.toString()) {
         project.members.push({ user: user._id, role: 'developer' });
         await project.save();
+        await queueProjectActiveSprintRiskRefresh(project._id);
+        queueUserAiBurnoutRefresh(user._id);
       }
     }
 
@@ -48,7 +221,18 @@ export const getFreePool = async (req, res) => {
       status: 'active',
       managedBy: null
     }).select('-password');
-    apiResponse(res, 200, true, freeDevelopers, 'Fetched free pool successfully');
+
+    const enriched = await Promise.all(
+      freeDevelopers.map(async (dev) => {
+        const summary = await buildDeveloperAssignmentSummary(dev._id);
+        return {
+          ...dev.toObject(),
+          ...summary,
+        };
+      })
+    );
+
+    apiResponse(res, 200, true, enriched, 'Fetched free pool successfully');
   } catch (error) {
     apiResponse(res, 500, false, null, 'Server error fetching free pool');
   }
@@ -64,9 +248,14 @@ export const getMyDevelopers = async (req, res) => {
     
     // Enrich with actual project count per developer
     const enriched = await Promise.all(developers.map(async (dev) => {
-      const projectCount = await Project.countDocuments({ 'members.user': dev._id });
+      const summary = await buildDeveloperAssignmentSummary(dev._id);
       const devObj = dev.toObject();
-      devObj.projectCount = projectCount;
+      devObj.projects = summary.projects;
+      devObj.projectCount = summary.projectCount;
+      devObj.sprintCount = summary.sprintCount;
+      devObj.activeSprintCount = summary.activeSprintCount;
+      devObj.taskCount = summary.taskCount;
+      devObj.openTaskCount = summary.openTaskCount;
       return devObj;
     }));
 
@@ -101,12 +290,78 @@ export const releaseDeveloper = async (req, res) => {
       return apiResponse(res, 403, false, null, 'Not authorized to release this developer');
     }
 
+    const releaseImpact = await buildReleaseImpact({
+      developerId: developer._id,
+      ownerId: req.user._id,
+      includeAllProjects: req.user.role === 'admin',
+    });
+
+    const forceRelease = String(req.query.force || req.body?.force || '').toLowerCase() === 'true';
+    if (releaseImpact.activeSprintAssignments > 0 && !forceRelease) {
+      return apiResponse(
+        res,
+        409,
+        false,
+        { impact: releaseImpact },
+        'Developer has active sprint assignments. Confirm force release to continue.'
+      );
+    }
+
+    if (releaseImpact.projectIds.length > 0) {
+      await Project.updateMany(
+        { _id: { $in: releaseImpact.projectIds } },
+        { $pull: { members: { user: developer._id } } }
+      );
+    }
+
+    const unassignedTasks = await unassignDeveloperFromProjects({
+      developerId: developer._id,
+      projectIds: releaseImpact.projectIds,
+    });
+
     developer.managedBy = null;
     await developer.save();
 
-    apiResponse(res, 200, true, null, 'Developer released successfully');
+    queueUserAiBurnoutRefresh(developer._id);
+    for (const projectId of releaseImpact.projectIds) {
+      await queueProjectActiveSprintRiskRefresh(projectId);
+    }
+
+    apiResponse(
+      res,
+      200,
+      true,
+      {
+        developer: developer.toObject(),
+        impact: releaseImpact,
+        unassignedTasks,
+        forced: forceRelease,
+      },
+      'Developer released successfully'
+    );
   } catch (error) {
     apiResponse(res, 500, false, null, 'Server error releasing developer');
+  }
+};
+
+export const previewReleaseDeveloperImpact = async (req, res) => {
+  try {
+    const developer = await User.findById(req.params.id);
+    if (!developer) return apiResponse(res, 404, false, null, 'Developer not found');
+
+    if (developer.managedBy?.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return apiResponse(res, 403, false, null, 'Not authorized to release this developer');
+    }
+
+    const impact = await buildReleaseImpact({
+      developerId: developer._id,
+      ownerId: req.user._id,
+      includeAllProjects: req.user.role === 'admin',
+    });
+
+    return apiResponse(res, 200, true, impact, 'Developer release impact preview ready');
+  } catch (error) {
+    apiResponse(res, 500, false, null, 'Server error previewing release impact');
   }
 };
 
@@ -118,6 +373,7 @@ export const approveDeveloper = async (req, res) => {
     developer.status = 'active';
     developer.managedBy = req.user._id; // Claiming ownership upon approval
     await developer.save();
+    queueUserAiBurnoutRefresh(developer._id);
 
     const { projectId } = req.body;
     if (projectId) {
@@ -127,6 +383,8 @@ export const approveDeveloper = async (req, res) => {
         if (!isMember) {
           project.members.push({ user: developer._id, role: 'developer' });
           await project.save();
+          await queueProjectActiveSprintRiskRefresh(project._id);
+          queueUserAiBurnoutRefresh(developer._id);
         }
       }
     }
@@ -171,8 +429,14 @@ export const claimDeveloper = async (req, res) => {
       read: false
     });
 
+    const summary = await buildDeveloperAssignmentSummary(developer._id);
     const enrichedDev = developer.toObject();
-    enrichedDev.projectCount = await Project.countDocuments({ 'members.user': developer._id });
+    enrichedDev.projects = summary.projects;
+    enrichedDev.projectCount = summary.projectCount;
+    enrichedDev.sprintCount = summary.sprintCount;
+    enrichedDev.activeSprintCount = summary.activeSprintCount;
+    enrichedDev.taskCount = summary.taskCount;
+    enrichedDev.openTaskCount = summary.openTaskCount;
 
     apiResponse(res, 200, true, enrichedDev, 'Developer claimed successfully');
   } catch (error) {

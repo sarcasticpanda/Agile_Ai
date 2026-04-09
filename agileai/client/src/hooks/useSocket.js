@@ -3,7 +3,9 @@ import { io } from 'socket.io-client';
 import useAuthStore from '../store/authStore';
 import { useQueryClient } from '@tanstack/react-query';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:5000';
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:5001');
 
 export const useSocket = (projectId) => {
   const socketRef = useRef(null);
@@ -33,7 +35,15 @@ export const useSocket = (projectId) => {
       if (projectId) queryClient.invalidateQueries(['tasks', projectId]);
     });
 
+    socket.on('task:moved', () => {
+      if (projectId) queryClient.invalidateQueries(['tasks', projectId]);
+    });
+
     socket.on('sprint:updated', () => {
+      if (projectId) queryClient.invalidateQueries(['sprints', projectId]);
+    });
+
+    socket.on('sprint:status_changed', () => {
       if (projectId) queryClient.invalidateQueries(['sprints', projectId]);
     });
 
