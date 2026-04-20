@@ -1,12 +1,9 @@
-import React from 'react';
-import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { TaskCard } from './TaskCard';
-import { MoreHorizontal } from 'lucide-react';
+import useAuthStore from '../../store/authStore';
+import { Plus, MoreHorizontal } from 'lucide-react';
 
 const getColumnColor = (id) => {
   switch (id) {
-    case 'todo': return 'bg-slate-400'; // Fixed by GSD Task 6: match enum id not display name
+    case 'todo': return 'bg-slate-400';
     case 'inprogress': return 'bg-primary';
     case 'review': return 'bg-amber-500';
     case 'done': return 'bg-green-500';
@@ -14,10 +11,14 @@ const getColumnColor = (id) => {
   }
 };
 
-export const KanbanColumn = ({ column, tasks, onTaskClick }) => {
+export const KanbanColumn = ({ column, tasks, onTaskClick, onAddTask }) => {
   const { setNodeRef } = useDroppable({
     id: column.id,
   });
+
+  const { user } = useAuthStore();
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPM = user?.role?.toLowerCase() === 'pm';
 
   const columnColor = getColumnColor(column.id);
 
@@ -51,10 +52,15 @@ export const KanbanColumn = ({ column, tasks, onTaskClick }) => {
         )}
       </div>
 
-      <button className="w-full py-2 border-2 border-dashed border-border-light dark:border-border-dark rounded-xl flex items-center justify-center space-x-2 text-slate-400 hover:text-primary hover:border-primary/50 transition-all text-sm font-medium group">
-        <span className="text-lg group-hover:scale-110 transition-transform">+</span>
-        <span>Add task</span>
-      </button>
+      {(isAdmin || isPM) && (
+        <button 
+          onClick={onAddTask}
+          className="w-full py-2 border-2 border-dashed border-border-light dark:border-border-dark rounded-xl flex items-center justify-center space-x-2 text-slate-400 hover:text-primary hover:border-primary/50 transition-all text-sm font-medium group"
+        >
+          <Plus size={16} className="group-hover:scale-110 transition-transform" />
+          <span>Add task</span>
+        </button>
+      )}
     </div>
   );
 };

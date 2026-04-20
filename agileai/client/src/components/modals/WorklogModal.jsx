@@ -32,11 +32,11 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
   const [description, setDescription] = useState('');
 
   const invalidateAnalytics = () => {
-    queryClient.invalidateQueries(['analyticsOverview']);
-    queryClient.invalidateQueries(['velocity']);
-    queryClient.invalidateQueries(['teamStats']);
-    queryClient.invalidateQueries(['burndown']);
-    queryClient.invalidateQueries(['sprints']);
+    queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+    queryClient.invalidateQueries({ queryKey: ['velocity'] });
+    queryClient.invalidateQueries({ queryKey: ['teamStats'] });
+    queryClient.invalidateQueries({ queryKey: ['burndown'] });
+    queryClient.invalidateQueries({ queryKey: ['sprints'] });
   };
 
   const resetForm = () => {
@@ -77,8 +77,8 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     },
     onSuccess: () => {
       toast.success('Worklog added successfully');
-      queryClient.invalidateQueries(['my-tasks']);
-      queryClient.invalidateQueries(['task', task?._id]);
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['task', task?._id] });
       invalidateAnalytics();
       onClose();
       resetForm();
@@ -95,9 +95,9 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     },
     onSuccess: () => {
       toast.success('Work timer stopped and log recorded');
-      queryClient.invalidateQueries(['my-tasks']);
-      queryClient.invalidateQueries(['task', task?._id]);
-      queryClient.invalidateQueries(['tasks']);
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['task', task?._id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       invalidateAnalytics();
       onClose();
       resetForm();

@@ -24,6 +24,7 @@ import notificationRoutes from './routes/notification.routes.js';
 import agentRoutes from './routes/agent.routes.js';
 import riskRoutes from './routes/risk.routes.js';
 import pmRoutes from './routes/pm.routes.js';
+import healthRoutes from './routes/health.routes.js';
 
 // Middlewares & Services
 import { errorHandler, notFound } from './middleware/errorHandler.middleware.js';
@@ -84,6 +85,7 @@ const connectDB = async () => {
 };
 
 // API Routes
+app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/sprints', sprintRoutes);

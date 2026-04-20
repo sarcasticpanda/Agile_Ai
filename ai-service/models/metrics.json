@@ -1,7 +1,4 @@
 {
-  "risk_model_macro_f1": 1.0,
-  "effort_model_mae": 3.572,
-  "burnout_model_macro_f1": 0.3614,
-  "burnout_training_rows": 34,
-  "burnout_label_source": "heuristic"
+    "risk_model_macro_f1": 0.9995,
+    "effort_model_mae": 3.5336
 }

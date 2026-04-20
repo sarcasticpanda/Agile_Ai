@@ -76,9 +76,9 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const updateStatusMutation = useMutation({
     mutationFn: (newStatus) => tasksApi.updateTaskStatus({ id: taskId, status: newStatus }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
       if (projectId) {
-        queryClient.invalidateQueries(['tasks', projectId]);
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       }
       toast.success('Task status updated');
     },
@@ -88,7 +88,7 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const addCommentMutation = useMutation({
     mutationFn: (text) => tasksApi.addComment({ id: taskId, text }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
       setCommentText('');
       toast.success('Comment added');
     },
@@ -103,10 +103,10 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const updateBlockedByMutation = useMutation({
     mutationFn: (newBlockedByIds) => tasksApi.updateTask({ id: taskId, data: { blockedBy: newBlockedByIds } }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
       if (projectId) {
-        queryClient.invalidateQueries(['tasks', projectId]);
-        queryClient.invalidateQueries(['tasks', projectId, 'for-blocked-by']);
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId, 'for-blocked-by'] });
       }
       toast.success('Dependencies updated');
     },
@@ -126,10 +126,10 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
       return tasksApi.updateTask({ id: taskId, data: payload });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
       if (projectId) {
-        queryClient.invalidateQueries(['tasks', projectId]);
-        queryClient.invalidateQueries(['my-tasks', user?._id]);
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['my-tasks', user?._id] });
       }
       toast.success('Task assignment updated');
     },
@@ -202,6 +202,7 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
 
   const aiSp = typeof task?.aiEstimatedStoryPoints === 'number' ? task.aiEstimatedStoryPoints : null;
   const aiHours = typeof task?.aiEstimatedHours === 'number' ? task.aiEstimatedHours : null;
+  const aiConfidence = typeof task?.aiEstimateConfidence === 'number' ? task.aiEstimateConfidence : null;
   const aiSpAt = task?.aiEstimatedStoryPointsAt || null;
   const aiHoursBaseline = typeof task?.aiHoursPerPointBaseline === 'number' ? task.aiHoursPerPointBaseline : null;
   const aiHoursSampleCount = typeof task?.aiHoursPerPointSampleCount === 'number' ? task.aiHoursPerPointSampleCount : null;
@@ -454,7 +455,7 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                       <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Estimated Hours</span>
                       <span className="text-sm font-extrabold text-slate-800">
-                        {aiHours == null ? '—' : aiHours.toFixed(1)}
+                        {aiHours == null ? 'Pending estimate' : `${aiHours.toFixed(1)}h ${aiConfidence != null ? `(${Math.round(aiConfidence * 100)}% confidence)` : ''}`}
                       </span>
                       <div className="text-[10px] text-slate-500 mt-1">
                         {aiHoursBaseline == null

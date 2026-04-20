@@ -6,13 +6,13 @@ export const useTask = (projectId, sprintId) => {
   const queryClient = useQueryClient();
 
   const invalidateAnalyticsQueries = (targetSprintId = sprintId) => {
-    queryClient.invalidateQueries(['analyticsOverview']);
-    queryClient.invalidateQueries(['velocity', projectId]);
-    queryClient.invalidateQueries(['teamStats', projectId]);
-    queryClient.invalidateQueries(['sprints', projectId]);
+    queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+    queryClient.invalidateQueries({ queryKey: ['velocity', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['teamStats', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
     if (targetSprintId) {
-      queryClient.invalidateQueries(['burndown', targetSprintId]);
-      queryClient.invalidateQueries(['teamStats', projectId, targetSprintId]);
+      queryClient.invalidateQueries({ queryKey: ['burndown', targetSprintId] });
+      queryClient.invalidateQueries({ queryKey: ['teamStats', projectId, targetSprintId] });
     }
   };
 
@@ -27,7 +27,7 @@ export const useTask = (projectId, sprintId) => {
   const createTaskMutation = useMutation({
     mutationFn: tasksApi.createTask,
     onSuccess: () => {
-      queryClient.invalidateQueries(['tasks', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       invalidateAnalyticsQueries();
       toast.success('Task created successfully');
     },
@@ -38,15 +38,15 @@ export const useTask = (projectId, sprintId) => {
     onSuccess: (data, variables) => {
       const targetSprintId = variables?.sprintId || sprintId;
       
-      queryClient.invalidateQueries(['tasks', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       if (targetSprintId) {
-        queryClient.invalidateQueries(['tasks', projectId, targetSprintId]);
-        queryClient.invalidateQueries(['burndown', targetSprintId]);
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId, targetSprintId] });
+        queryClient.invalidateQueries({ queryKey: ['burndown', targetSprintId] });
       }
       invalidateAnalyticsQueries(targetSprintId);
     },
     onSettled: () => {
-      queryClient.invalidateQueries(['tasks', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       invalidateAnalyticsQueries();
     },
   });
@@ -54,10 +54,10 @@ export const useTask = (projectId, sprintId) => {
   const updateTaskMutation = useMutation({
     mutationFn: tasksApi.updateTask,
     onSuccess: () => {
-      queryClient.invalidateQueries(['tasks', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       if (sprintId) {
-        queryClient.invalidateQueries(['tasks', projectId, sprintId]);
-        queryClient.invalidateQueries(['burndown', sprintId]);
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId, sprintId] });
+        queryClient.invalidateQueries({ queryKey: ['burndown', sprintId] });
       }
       invalidateAnalyticsQueries();
     },

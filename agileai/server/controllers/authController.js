@@ -13,12 +13,16 @@ export const registerUser = async (req, res) => {
     return apiResponse(res, 400, false, null, 'User already exists');
   }
 
+  const normalizedIntent = String(role || 'developer').toLowerCase();
+  const requestedRole = normalizedIntent === 'pm' ? 'pm' : 'developer';
+
   const user = await User.create({
     name,
     email,
     password,
-    role: 'developer', // STRICT ROLE, PREVENTS ESCALATION
-    status: 'pending', // INITIAL STATUS
+    role: 'developer',
+    requestedRole,
+    status: 'pending',
   });
 
   if (user) {
@@ -36,6 +40,7 @@ export const registerUser = async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      requestedRole: user.requestedRole,
       status: user.status,
     }, 'User registered successfully. Please wait for admin approval.');
   } else {

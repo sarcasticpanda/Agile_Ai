@@ -43,8 +43,8 @@ export const BacklogPage = () => {
   const [projectMembers, setProjectMembers] = useState([]);
 
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin';
-  const isPM = user?.role === 'pm';
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPM = user?.role?.toLowerCase() === 'pm';
 
   // Fetch project members for assignee picker
   useEffect(() => {

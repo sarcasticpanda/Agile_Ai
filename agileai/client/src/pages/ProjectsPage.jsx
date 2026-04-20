@@ -28,8 +28,8 @@ export const ProjectsPage = () => {
   const { setActiveProject: setProjectStore } = useProjectStore();
   
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin';
-  const isPM = user?.role === 'pm';
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPM = user?.role?.toLowerCase() === 'pm';
 
   const { data: response, isLoading } = useQuery({
     queryKey: ['projects'],
@@ -41,7 +41,7 @@ export const ProjectsPage = () => {
   const createProjectMutation = useMutation({
     mutationFn: projectsApi.createProject,
     onSuccess: () => {
-      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
       setIsModalOpen(false);
       toast.success('Project created successfully');
     },
@@ -54,7 +54,7 @@ export const ProjectsPage = () => {
   const addMemberMutation = useMutation({
     mutationFn: projectsApi.addProjectMember,
     onSuccess: () => {
-      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
       setManageMembersProject(null);
       toast.success('Member added — they can now log in and see this project');
     },

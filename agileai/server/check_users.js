@@ -15,11 +15,23 @@ async function checkUsers() {
       isActive: Boolean
     });
     const User = mongoose.model('User', userSchema);
+
+    const onlyCore = process.argv.includes('--core');
+    const coreEmails = [
+      'admin@agileai.com',
+      'pm@agileai.com',
+      'alice@agileai.com',
+      'bob@agileai.com',
+      'charlie@agileai.com',
+      'david@agileai.com',
+      'eve@agileai.com',
+    ];
+    const query = onlyCore ? { email: { $in: coreEmails } } : {};
     
-    const users = await User.find({});
+    const users = await User.find(query);
     console.log("--- Existing Users ---");
     users.forEach(u => {
-      console.log(`- ${u.name} (${u.email}) | Role: ${u.role} | Active: ${u.isActive}`);
+      console.log(`- ${u._id} | ${u.name} (${u.email}) | Role: ${u.role} | Active: ${u.isActive}`);
     });
     console.log("-----------------------");
     

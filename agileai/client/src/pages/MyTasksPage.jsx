@@ -14,11 +14,11 @@ export const MyTasksPage = () => {
   const [selectedActiveTimer, setSelectedActiveTimer] = useState(null);
 
   const invalidateAnalytics = () => {
-    queryClient.invalidateQueries(['analyticsOverview']);
-    queryClient.invalidateQueries(['velocity']);
-    queryClient.invalidateQueries(['teamStats']);
-    queryClient.invalidateQueries(['burndown']);
-    queryClient.invalidateQueries(['sprints']);
+    queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+    queryClient.invalidateQueries({ queryKey: ['velocity'] });
+    queryClient.invalidateQueries({ queryKey: ['teamStats'] });
+    queryClient.invalidateQueries({ queryKey: ['burndown'] });
+    queryClient.invalidateQueries({ queryKey: ['sprints'] });
   };
 
   const { data: tasksRes, isLoading } = useQuery({
@@ -38,7 +38,7 @@ export const MyTasksPage = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['my-tasks', user?._id]);
+      queryClient.invalidateQueries({ queryKey: ['my-tasks', user?._id] });
       invalidateAnalytics();
       toast.success('Task status updated');
     },
@@ -55,8 +55,8 @@ export const MyTasksPage = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['my-tasks', user?._id]);
-      queryClient.invalidateQueries(['tasks']);
+      queryClient.invalidateQueries({ queryKey: ['my-tasks', user?._id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       invalidateAnalytics();
       toast.success('Work session started. Task moved to In Progress.');
     },

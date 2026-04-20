@@ -1,46 +1,44 @@
-// AI Proxy Service 
+// AI Proxy Service
 // Connects to the Python FastAPI microservice
 import axios from 'axios';
 
 const getAIServiceUrl = () => process.env.AI_SERVICE_URL || 'http://127.0.0.1:8001';
 
-export const predictRisk = async (sprintData) => {
-  try {
-    const response = await axios.post(`${getAIServiceUrl()}/predict-risk`, sprintData);
-    return response.data;
-  } catch (error) {
-    console.error('Error hitting AI Service for predictRisk:', error.message);
-    // Fallback or re-throw
-    throw new Error('AI Service unavailable');
+const logAi = (operation, { ms, ok, status, detail }) => {
+  const payload = { operation, ms, ok, status, detail: detail || undefined };
+  if (ok) {
+    console.log('[AI]', JSON.stringify(payload));
+  } else {
+    console.warn('[AI]', JSON.stringify(payload));
   }
 };
 
-export const estimateEffort = async (taskData) => {
+const postJson = async (operation, path, body, timeoutMs = 5000) => {
+  const url = `${getAIServiceUrl().replace(/\/$/, '')}${path}`;
+  const started = Date.now();
   try {
-    const response = await axios.post(`${getAIServiceUrl()}/estimate-effort`, taskData);
+    const response = await axios.post(url, body, { timeout: timeoutMs });
+    const ms = Date.now() - started;
+    const ok = response?.data?.ok === true;
+    logAi(operation, { ms, ok, status: response?.status });
     return response.data;
   } catch (error) {
-    console.error('Error hitting AI Service for estimateEffort:', error.message);
-    throw new Error('AI Service unavailable');
+    const ms = Date.now() - started;
+    const status = error?.response?.status;
+    logAi(operation, {
+      ms,
+      ok: false,
+      status: status ?? null,
+      detail: error?.response?.data?.detail || error?.message || String(error),
+    });
+    return null;
   }
 };
 
-export const getInsights = async (sprintData) => {
-  try {
-    const response = await axios.post(`${getAIServiceUrl()}/insights`, sprintData);
-    return response.data;
-  } catch (error) {
-    console.error('Error hitting AI Service for insights:', error.message);
-    throw new Error('AI Service unavailable');
-  }
-};
+export const predictRisk = async (sprintData) => postJson('predictRisk', '/predict-risk', sprintData);
 
-export const predictBurnout = async (userData) => {
-  try {
-    const response = await axios.post(`${getAIServiceUrl()}/predict-burnout`, userData);
-    return response.data;
-  } catch (error) {
-    console.error('Error hitting AI Service for predictBurnout:', error.message);
-    throw new Error('AI Service unavailable');
-  }
-};
+export const estimateEffort = async (taskData) => postJson('estimate-effort', '/estimate-effort', taskData);
+
+export const getInsights = async (sprintData) => postJson('getInsights', '/insights', sprintData);
+
+export const predictBurnout = async (userData) => postJson('predictBurnout', '/predict-burnout', userData);

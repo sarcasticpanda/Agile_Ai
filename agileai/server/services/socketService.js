@@ -11,6 +11,13 @@ export const initializeSockets = (io) => {
 
     // Join project room to receive project level updates (task moved, sprint changed)
     socket.on('join:project', (projectId) => {
+      if (!projectId) return;
+      const prev = socket.data?.currentProjectId;
+      if (prev && String(prev) !== String(projectId)) {
+        socket.leave(`project:${prev}`);
+      }
+      socket.data = socket.data || {};
+      socket.data.currentProjectId = projectId;
       socket.join(`project:${projectId}`);
     });
 

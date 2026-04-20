@@ -4,14 +4,25 @@ import {
   estimateEffort,
   getInsights,
   predictBurnout,
+  getSprintRiskCached,
+  getMyBurnout,
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { requireRole } from '../middleware/rbac.middleware.js';
 
 const router = express.Router();
 
-// AI Routes Phase 1: Fixed by @Backend — restrict to PM/Admin per role matrix
+// All routes require authentication
 router.use(protect);
+
+// ---- Open to ALL authenticated roles (dev, pm, admin) ----
+// Developers can read their own burnout score; PMs read their team's
+router.get('/burnout/:userId', getMyBurnout);
+
+// GET cached sprint risk — PM/admin + any dev on that project
+router.get('/sprint-risk/:sprintId', getSprintRiskCached);
+
+// ---- PM / Admin only below this line ----
 router.use(requireRole('admin', 'pm'));
 
 router.post('/predict-risk', predictRisk);

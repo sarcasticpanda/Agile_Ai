@@ -183,20 +183,25 @@ export const AuthPage = () => {
                 </div>
 
                 {!isLogin && (
-                  <div className="relative">
-                    <select 
-                      name="role"
-                      value={formData.role}
-                      onChange={handleChange}
-                      className="block w-full px-4 py-3 text-slate-900 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg focus:ring-primary focus:border-primary appearance-none dark:text-white outline-none cursor-pointer"
-                    >
-                      <option value="admin">Admin</option>
-                      <option value="pm">Project Manager</option>
-                      <option value="developer">Developer</option>
-                    </select>
-                    <div className="absolute right-4 top-3.5 pointer-events-none text-slate-400">
-                      <ArrowRight size={18} className="rotate-90" />
+                  <div className="space-y-1 sm:col-span-2">
+                    <div className="relative">
+                      <select
+                        name="role"
+                        value={formData.role}
+                        onChange={handleChange}
+                        className="block w-full px-4 py-3 text-slate-900 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg focus:ring-primary focus:border-primary appearance-none dark:text-white outline-none cursor-pointer"
+                      >
+                        <option value="developer">Developer</option>
+                        <option value="pm">Project Manager (pending admin)</option>
+                      </select>
+                      <div className="absolute right-4 top-3.5 pointer-events-none text-slate-400">
+                        <ArrowRight size={18} className="rotate-90" />
+                      </div>
                     </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug px-0.5">
+                      New accounts are <strong>Developer · Pending</strong>. An admin activates you and may grant{' '}
+                      <strong>PM</strong> if you requested it.
+                    </p>
                   </div>
                 )}
               </div>

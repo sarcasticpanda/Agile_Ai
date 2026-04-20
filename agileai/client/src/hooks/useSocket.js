@@ -1,60 +1,57 @@
-import { useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
-import useAuthStore from '../store/authStore';
-import { useQueryClient } from '@tanstack/react-query';
+const refId = (value) => {
+  if (value == null) return null;
+  if (typeof value === 'object' && value._id != null) return String(value._id);
+  return String(value);
+};
 
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
-  (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:5001');
+/**
+ * Invalidate React Query caches after a task-shaped payload from Socket.IO.
+ */
+export const invalidateCachesForTaskPayload = (queryClient, task) => {
+  if (!task) return;
+  const projectId = refId(task.project);
+  const sprintId = refId(task.sprint);
+  const taskId = refId(task._id ?? task.id);
 
-export const useSocket = (projectId) => {
-  const socketRef = useRef(null);
-  const { user } = useAuthStore();
-  const queryClient = useQueryClient();
+  if (projectId) {
+    queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['velocity', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['teamStats', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+    queryClient.invalidateQueries({ queryKey: ['projectMembers', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['ai-insights-sprints', projectId] });
+  }
+  if (sprintId) {
+    queryClient.invalidateQueries({ queryKey: ['burndown', sprintId] });
+    queryClient.invalidateQueries({ queryKey: ['sprint-risk', sprintId] });
+    queryClient.invalidateQueries({ queryKey: ['ai-insights', sprintId] });
+  }
+  if (taskId) {
+    queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+  }
+  queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
+};
 
-  useEffect(() => {
-    if (!user) return;
+/**
+ * Invalidate caches after sprint status / metadata updates.
+ */
+export const invalidateCachesForSprintPayload = (queryClient, sprint) => {
+  if (!sprint) return;
+  const projectId = refId(sprint.projectId);
+  const sprintId = refId(sprint._id);
 
-    // Connect
-    socketRef.current = io(SOCKET_URL, {
-      transports: ['websocket'],
-      autoConnect: true,
-    });
-
-    const socket = socketRef.current;
-
-    socket.on('connect', () => {
-      socket.emit('join:user', user._id);
-      if (projectId) {
-        socket.emit('join:project', projectId);
-      }
-    });
-
-    // Listeners for invalidation
-    socket.on('task:updated', () => {
-      if (projectId) queryClient.invalidateQueries(['tasks', projectId]);
-    });
-
-    socket.on('task:moved', () => {
-      if (projectId) queryClient.invalidateQueries(['tasks', projectId]);
-    });
-
-    socket.on('sprint:updated', () => {
-      if (projectId) queryClient.invalidateQueries(['sprints', projectId]);
-    });
-
-    socket.on('sprint:status_changed', () => {
-      if (projectId) queryClient.invalidateQueries(['sprints', projectId]);
-    });
-
-    socket.on('notification:new', () => {
-      queryClient.invalidateQueries(['notifications']);
-    });
-
-    return () => {
-      if (socket) socket.disconnect();
-    };
-  }, [user, projectId, queryClient]);
-
-  return socketRef.current;
+  if (projectId) {
+    queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['velocity', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['teamStats', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
+    queryClient.invalidateQueries({ queryKey: ['ai-insights-sprints', projectId] });
+  }
+  if (sprintId) {
+    queryClient.invalidateQueries({ queryKey: ['burndown', sprintId] });
+    queryClient.invalidateQueries({ queryKey: ['sprint-risk', sprintId] });
+    queryClient.invalidateQueries({ queryKey: ['ai-insights', sprintId] });
+  }
 };

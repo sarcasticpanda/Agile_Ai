@@ -12,6 +12,6 @@ COPY . .
 # Set up volume for uploads
 RUN mkdir -p uploads
 
-EXPOSE 5000
+EXPOSE 5001
 
 CMD ["npm", "start"]

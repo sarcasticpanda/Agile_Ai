@@ -1,44 +1,44 @@
 {
   "featureVersion": "burnout_v1_mongo_export",
-  "createdAt": "2026-04-08T16:11:14.779272+00:00",
-  "modelVersion": "95045f1ca9c4675c112518d38844e0c0947b3e270867f58edf6ee796b23470f2",
+  "createdAt": "2026-04-19T12:34:44.561360+00:00",
+  "modelVersion": "a303445662398f81d5626748e2696fd7b6ca44dce74cbd2aa9021a2c548c4584",
   "windowDays": 30,
-  "labelSource": "heuristic",
+  "labelSource": "manual",
   "classIndexToLevel": {
     "0": "low",
     "1": "medium",
     "2": "high"
   },
   "classDistribution": {
-    "low": 11,
-    "medium": 11,
-    "high": 12
+    "low": 109,
+    "medium": 50,
+    "high": 65
   },
-  "trainingRows": 34,
+  "trainingRows": 224,
   "crossValidation": {
     "nSplits": 5,
-    "macroF1": 0.3614,
-    "trials": 30
+    "macroF1": 0.9884,
+    "trials": 60
   },
   "bestParams": {
-    "n_estimators": 113,
-    "max_depth": 4,
-    "learning_rate": 0.18871867269657197,
-    "subsample": 0.8867529267593306,
-    "colsample_bytree": 0.6456034250214809,
+    "n_estimators": 108,
+    "max_depth": 6,
+    "learning_rate": 0.06953392408705024,
+    "subsample": 0.8921579268491553,
+    "colsample_bytree": 0.6044907534461635,
     "random_state": 42,
     "objective": "multi:softprob",
     "num_class": 3,
     "eval_metric": "mlogloss"
   },
   "data": {
-    "csvPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\burnout_features_unlabeled_2026-04-08T16-07-03-897Z.csv",
-    "source": "summary",
-    "summaryPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\export_summary_2026-04-08T16-07-03-897Z.json",
+    "csvPath": "C:\\Users\\Lunar Panda\\OneDrive\\Attachments\\Desktop\\agile_ai\\Agile_Ai\\ai-service\\data_exports\\burnout_features_augmented.csv",
+    "source": "explicit-path",
+    "summaryPath": null,
     "heuristicScoreStats": {
       "min": 0.0,
-      "p50": 0.0,
-      "max": 0.07520183666335979
+      "p50": 0.5,
+      "max": 1.0
     }
   }
 }

@@ -148,6 +148,24 @@ const assigneeIdsFromTask = (task) => {
   return Array.from(ids);
 };
 
+const projectRoomIdFromTask = (populatedTask, fallbackProjectId) =>
+  toIdString(populatedTask?.project?._id ?? populatedTask?.project ?? fallbackProjectId);
+
+const emitTaskToProjectAndAssignees = (io, eventName, populatedTask, { fallbackProjectId = null, extraUserIds = [] } = {}) => {
+  if (!io || !populatedTask) return;
+  const projectId = projectRoomIdFromTask(populatedTask, fallbackProjectId);
+  if (projectId) {
+    io.to(`project:${projectId}`).emit(eventName, populatedTask);
+  }
+  const recipients = new Set([
+    ...assigneeIdsFromTask(populatedTask),
+    ...extraUserIds.map((id) => toIdString(id)).filter((id) => id && id !== 'null'),
+  ]);
+  recipients.forEach((uid) => {
+    io.to(`user:${uid}`).emit(eventName, populatedTask);
+  });
+};
+
 const taskHasAssignee = (task, userId) => {
   if (!userId) return false;
   return assigneeIdsFromTask(task).includes(String(userId));
@@ -405,13 +423,25 @@ export const createTask = async (req, res) => {
     await Sprint.findByIdAndUpdate(task.sprint, { $push: { tasks: task._id } });
   }
 
+  const populatedNew = await Task.findById(task._id)
+    .populate('assignee', 'name avatar')
+    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('subtasks.assignee', 'name avatar')
+    .populate('activeTimers.user', 'name avatar')
+    .populate('reporter', 'name avatar');
+
+  const ioCreate = req.app.get('io');
+  if (ioCreate) {
+    emitTaskToProjectAndAssignees(ioCreate, 'task:updated', populatedNew, { fallbackProjectId: task.project });
+  }
+
   queueTaskAiEffortRefresh(task._id);
   if (task.sprint) {
     queueSprintAiRiskRefresh(task.sprint);
   }
   queueBurnoutRefreshForTask(task);
 
-  apiResponse(res, 201, true, task, 'Task created successfully');
+  apiResponse(res, 201, true, populatedNew, 'Task created successfully');
 };
 
 export const getTaskById = async (req, res) => {
@@ -521,7 +551,10 @@ export const updateTask = async (req, res) => {
 
   const io = req.app.get('io');
   if (io) {
-    io.to(`project:${task.project}`).emit('task:updated', populated);
+    emitTaskToProjectAndAssignees(io, 'task:updated', populated, {
+      fallbackProjectId: task.project,
+      extraUserIds: previousAssigneeIds,
+    });
   }
 
   if (touchesEffortInputs) {
@@ -597,6 +630,9 @@ export const updateTaskStatus = async (req, res) => {
   }
   if (newStatus === 'done') {
     task.completedAt = new Date();
+    if (task.sprint) {
+      queueSprintAiRiskRefresh(task.sprint);
+    }
   }
   if (oldStatus === 'done' && newStatus !== 'done') {
     task.reopenedAt = new Date();
@@ -634,7 +670,7 @@ export const updateTaskStatus = async (req, res) => {
 
   const io = req.app.get('io');
   if (io) {
-    io.to(`project:${task.project}`).emit('task:moved', populated);
+    emitTaskToProjectAndAssignees(io, 'task:moved', populated, { fallbackProjectId: task.project });
   }
 
   if (task.sprint) {
@@ -694,7 +730,21 @@ export const updateTaskSprint = async (req, res) => {
   queueTaskAiEffortRefresh(task._id);
   queueBurnoutRefreshForUserIds(taskAssigneeIds);
 
-  apiResponse(res, 200, true, task, 'Task sprint updated');
+  const populatedSprintMove = await Task.findById(task._id)
+    .populate('assignee', 'name avatar')
+    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('subtasks.assignee', 'name avatar')
+    .populate('reporter', 'name avatar');
+
+  const ioSprint = req.app.get('io');
+  if (ioSprint) {
+    emitTaskToProjectAndAssignees(ioSprint, 'task:updated', populatedSprintMove, {
+      fallbackProjectId: task.project,
+      extraUserIds: taskAssigneeIds,
+    });
+  }
+
+  apiResponse(res, 200, true, populatedSprintMove, 'Task sprint updated');
 };
 
 export const reorderTask = async (req, res) => {

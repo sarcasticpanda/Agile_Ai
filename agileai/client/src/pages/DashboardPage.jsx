@@ -3,6 +3,7 @@ import { PageShell } from '../components/layout/PageShell';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import axiosInstance from '../api/axiosInstance';
+import { getBurnout } from '../api/ai.api';
 import { 
   History, 
   CheckCircle2, 
@@ -12,7 +13,8 @@ import {
   Activity,
   Calendar,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Flame
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
@@ -60,6 +62,18 @@ export const DashboardPage = () => {
   const myTasks = devTasksRes?.data || [];
   const activeSprints = sprints.filter(s => s.status?.toLowerCase() === 'active');
   const activeTasks = myTasks.filter(t => t.status !== 'done');
+
+  // Fetch dev's own burnout score
+  const { data: burnoutRes } = useQuery({
+    queryKey: ['my-burnout', user?._id],
+    queryFn: () => getBurnout(user._id),
+    enabled: isDev && !!user?._id,
+    staleTime: 5 * 60 * 1000, // 5 min cache
+    retry: false,
+  });
+  const burnoutData = burnoutRes?.data;
+  const burnoutLevel = burnoutData?.burnoutRiskLevel?.toLowerCase() || null;
+  const burnoutScore = burnoutData?.burnoutRiskScore ?? null;
 
   // Keyboard shortcut handler
   useEffect(() => {
@@ -147,8 +161,48 @@ export const DashboardPage = () => {
               </div>
             ))}
 
-            {/* AI Risk Card */}
-            {!isDev && (
+            {/* AI Risk / Burnout Card */}
+            {isDev ? (
+              // Dev sees their own burnout badge
+              <div className={`p-5 border rounded-xl relative overflow-hidden group ${
+                burnoutLevel === 'high'
+                  ? 'bg-red-500/10 border-red-200 dark:border-red-900/30'
+                  : burnoutLevel === 'medium'
+                  ? 'bg-amber-500/10 border-amber-200 dark:border-amber-900/30'
+                  : burnoutLevel === 'low'
+                  ? 'bg-emerald-500/10 border-emerald-200 dark:border-emerald-900/30'
+                  : 'bg-slate-100 dark:bg-card-dark border-border-light dark:border-border-dark'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1 ${
+                    burnoutLevel === 'high' ? 'text-red-600 dark:text-red-400'
+                    : burnoutLevel === 'medium' ? 'text-amber-600 dark:text-amber-400'
+                    : burnoutLevel === 'low' ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-slate-500'
+                  }`}>
+                    <Flame size={14} />
+                    My Burnout Risk
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-3xl font-bold ${
+                    burnoutLevel === 'high' ? 'text-red-600 dark:text-red-400'
+                    : burnoutLevel === 'medium' ? 'text-amber-600 dark:text-amber-400'
+                    : burnoutLevel === 'low' ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-slate-400'
+                  }`}>
+                    {burnoutLevel ? burnoutLevel.charAt(0).toUpperCase() + burnoutLevel.slice(1) : '–'}
+                  </span>
+                  {burnoutScore !== null && (
+                    <span className="text-xs text-slate-400">{burnoutScore.toFixed(0)}%</span>
+                  )}
+                </div>
+                <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
+                  <Flame size={96} className={burnoutLevel === 'high' ? 'text-red-500' : burnoutLevel === 'medium' ? 'text-amber-500' : 'text-emerald-500'} />
+                </div>
+              </div>
+            ) : (
+              // PM/Admin sees AI Risk placeholder
               <div className="bg-red-500/10 dark:bg-red-500/5 p-5 border border-red-200 dark:border-red-900/30 rounded-xl relative overflow-hidden group">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center gap-1">
@@ -157,7 +211,7 @@ export const DashboardPage = () => {
                 </div>
                 <div className="flex items-baseline gap-2 relative z-10">
                   <span className="text-3xl font-bold text-red-600 dark:text-red-400">N/A</span>
-                  <span className="text-xs text-red-400">Phase 2</span>
+                  <span className="text-xs text-red-400">See Analytics</span>
                 </div>
                 <div className="absolute -right-4 -bottom-4 text-red-500/10 dark:text-red-500/10 group-hover:scale-110 transition-transform">
                   <AlertCircle size={96} />

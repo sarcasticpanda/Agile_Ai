@@ -60,21 +60,21 @@ export const deleteComment = async ({ id, cid }) => {
 };
 
 export const addWorklog = async ({ id, data }) => {
-  const response = await axiosInstance.post(`/tasks/${id}/worklog`, data);
+  const response = await axiosInstance.post(`/tasks/${id}/worklogs`, data);
   return response.data;
 };
 
 export const startWorklogTimer = async ({ id, data }) => {
-  const response = await axiosInstance.post(`/tasks/${id}/worklog/start`, data || {});
+  const response = await axiosInstance.post(`/tasks/${id}/worklogs/start`, data || {});
   return response.data;
 };
 
 export const stopWorklogTimer = async ({ id, data }) => {
-  const response = await axiosInstance.post(`/tasks/${id}/worklog/stop`, data || {});
+  const response = await axiosInstance.post(`/tasks/${id}/worklogs/stop`, data || {});
   return response.data;
 };
 
 export const deleteWorklog = async ({ id, wid }) => {
-  const response = await axiosInstance.delete(`/tasks/${id}/worklog/${wid}`);
+  const response = await axiosInstance.delete(`/tasks/${id}/worklogs/${wid}`);
   return response.data;
 };

@@ -23,6 +23,12 @@ const userSchema = new mongoose.Schema(
       enum: ['admin', 'pm', 'developer'],
       default: 'developer',
     },
+    /** Self-serve signup intent (never admin). Cleared when an admin activates the account. */
+    requestedRole: {
+      type: String,
+      enum: ['pm', 'developer'],
+      default: null,
+    },
     avatar: {
       type: String,
     },

@@ -20,6 +20,7 @@ import useProjectStore from '../store/projectStore';
 import * as analyticsApi from '../api/analytics.api';
 import * as sprintsApi from '../api/sprints.api';
 import * as projectsApi from '../api/projects.api';
+import axiosInstance from '../api/axiosInstance';
 
 export const AnalyticsPage = () => {
   const { projectId } = useParams();
@@ -88,11 +89,29 @@ export const AnalyticsPage = () => {
   });
   const sprints = sprintsRes?.data || [];
 
+  const analyticsPollInterval = useMemo(() => {
+    if (!shouldRenderProjectAnalysis || !effectiveProjectId) return false;
+    const list = sprintsRes?.data || [];
+    const hasActive = list.some((s) => String(s?.status || '').toLowerCase() === 'active');
+    return hasActive ? 30000 : false;
+  }, [shouldRenderProjectAnalysis, effectiveProjectId, sprintsRes]);
+
+  const { data: healthRes } = useQuery({
+    queryKey: ['apiHealth'],
+    queryFn: async () => {
+      const res = await axiosInstance.get('/health');
+      return res.data;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
   // 3. Burndown Data (project-specific)
   const { data: burndownRes, isLoading: isLoadingBurndown } = useQuery({
     queryKey: ['burndown', selectedSprintId],
     queryFn: () => analyticsApi.getBurndownData(selectedSprintId),
     enabled: !!selectedSprintId,
+    refetchInterval: analyticsPollInterval,
   });
 
   // 4. Velocity Data (project-specific)
@@ -100,6 +119,7 @@ export const AnalyticsPage = () => {
     queryKey: ['velocity', effectiveProjectId],
     queryFn: () => analyticsApi.getVelocityData(effectiveProjectId),
     enabled: shouldRenderProjectAnalysis && !!effectiveProjectId,
+    refetchInterval: analyticsPollInterval,
   });
 
   // 5. Team Stats (project-specific)
@@ -107,6 +127,7 @@ export const AnalyticsPage = () => {
     queryKey: ['teamStats', effectiveProjectId, selectedSprintId || 'all'],
     queryFn: () => analyticsApi.getTeamStats(effectiveProjectId, selectedSprintId || undefined),
     enabled: shouldRenderProjectAnalysis && !!effectiveProjectId,
+    refetchInterval: analyticsPollInterval,
   });
 
   const overview = overviewRes?.data;
@@ -121,17 +142,14 @@ export const AnalyticsPage = () => {
     (point) => Number(point?.planned || 0) > 0 || Number(point?.completed || 0) > 0
   );
   const liveVelocitySprint = velocityPayload?.liveSprint || null;
-  const velocitySeries = hasVelocityHistory
-    ? velocityData
-    : liveVelocitySprint
-      ? [
-          {
-            sprintName: `${liveVelocitySprint.sprintName} (Live)`,
-            planned: Number(liveVelocitySprint.planned || 0),
-            completed: Number(liveVelocitySprint.completed || 0),
-          },
-        ]
-      : [];
+  const velocitySeries = [...velocityData];
+  if (liveVelocitySprint) {
+    velocitySeries.push({
+      sprintName: `${liveVelocitySprint.sprintName} (Live)`,
+      planned: Number(liveVelocitySprint.planned || 0),
+      completed: Number(liveVelocitySprint.completed || 0),
+    });
+  }
   const hasVelocitySeriesData = velocitySeries.some(
     (point) => Number(point?.planned || 0) > 0 || Number(point?.completed || 0) > 0
   );
@@ -954,8 +972,25 @@ export const AnalyticsPage = () => {
       ? `Viewing PM-scoped analytics for ${selectedPmScope?.name || 'selected PM'}.`
       : 'Executive overview of organizational project metrics.';
 
+  const showAiDegradedBanner =
+    shouldRenderProjectAnalysis &&
+    !!effectiveProjectId &&
+    healthRes?.success === true &&
+    healthRes?.data?.ai &&
+    healthRes.data.ai.ok === false;
+
   return (
     <PageShell title="Project Intelligence">
+      {showAiDegradedBanner && (
+        <div
+          className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+          role="status"
+        >
+          AI inference service is not reachable. Risk and burnout scores may be stale until the Python
+          service is running and <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">AI_SERVICE_URL</code>{' '}
+          matches your deployment.
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-black text-slate-800 dark:text-white">Analytics Hub</h1>

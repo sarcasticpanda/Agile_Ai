@@ -201,15 +201,38 @@ def _hours_between_dates(from_date: Any, to_date: Any) -> Optional[float]:
     return float(delta_hours)
 
 
+# Maps match train_models.py encoding (fixed — was all hardcoded to 2)
+_TASK_TYPE_MAP: Dict[str, float] = {
+    "bug": 0.0,
+    "story": 1.0,
+    "task": 2.0,
+    "feature": 3.0,
+    "chore": 2.0,
+    "epic": 3.0,
+    "improvement": 2.0,
+    "sub-task": 1.0,
+}
+_TASK_PRIORITY_MAP: Dict[str, float] = {
+    "low": 0.0,
+    "medium": 1.0,
+    "high": 2.0,
+    "critical": 3.0,
+    "blocker": 3.0,
+    "major": 2.0,
+    "minor": 1.0,
+    "trivial": 0.0,
+}
+
+
 def _effort_feature_row(task_doc: Dict[str, Any]) -> pd.DataFrame:
     title = task_doc.get("title", "") or ""
     description = task_doc.get("description", "") or ""
+    task_type = (task_doc.get("type") or "task").lower().strip()
+    priority = (task_doc.get("priority") or "medium").lower().strip()
 
-    # NOTE: `train_models.py` currently hard-sets type_encoded=2 and priority_encoded=2
-    # for the training dataset, so we mirror that for strict compatibility.
     row = {
-        "type_encoded": 2.0,
-        "priority_encoded": 2.0,
+        "type_encoded": _TASK_TYPE_MAP.get(task_type, 2.0),
+        "priority_encoded": _TASK_PRIORITY_MAP.get(priority, 1.0),
         "desc_bucket": _desc_bucket(description),
         "title_length_norm": _title_length_norm(title),
     }
@@ -245,10 +268,18 @@ def _compute_hours_per_point(project_id: ObjectId, max_docs: int = 500) -> Dict[
             ratios.append(ratio)
 
     if len(ratios) < 10:
+        if len(ratios) >= 3:
+            # Use limited project history as rough estimate
+            return {
+                "hoursPerPoint": float(np.median(np.array(ratios, dtype=float))),
+                "sampleCount": len(ratios),
+                "reason": "limited_project_history",
+            }
+        # Fall back to industry-standard 4h per story point
         return {
-            "hoursPerPoint": None,
+            "hoursPerPoint": 4.0,
             "sampleCount": len(ratios),
-            "reason": "insufficient_history",
+            "reason": "industry_default_4h_per_point",
         }
 
     return {
@@ -313,6 +344,27 @@ def _risk_feature_row(sprint_doc: Dict[str, Any], sprint_tasks: List[Dict[str, A
 
     sprint_size_normalized = min(total, 30) / 30
 
+    assignee_ids = set()
+    for t in sprint_tasks:
+        assignee = t.get("assignee")
+        if assignee:
+            assignee_ids.add(_oid(str(assignee)) if isinstance(assignee, str) else assignee)
+
+    avg_team_burnout_score = 0.0
+    max_dev_burnout_score = 0.0
+    
+    if assignee_ids:
+        user_list = list(users.find({"_id": {"$in": list(assignee_ids)}}))
+        burnouts = []
+        for u in user_list:
+            b = u.get("aiBurnoutRiskScore")
+            if b is not None:
+                burnouts.append(float(b))
+                
+        if burnouts:
+            avg_team_burnout_score = sum(burnouts) / len(burnouts)
+            max_dev_burnout_score = max(burnouts)
+
     row = {
         "blocked_ratio": float(blocked_ratio),
         "blocking_ratio": float(blocking_ratio),
@@ -322,6 +374,8 @@ def _risk_feature_row(sprint_doc: Dict[str, Any], sprint_tasks: List[Dict[str, A
         "bug_ratio": float(bug_ratio),
         "churn_ratio": float(churn_ratio),
         "sprint_size_normalized": float(sprint_size_normalized),
+        "avg_team_burnout_score": float(avg_team_burnout_score),
+        "max_dev_burnout_score": float(max_dev_burnout_score),
     }
 
     return pd.DataFrame([[row.get(col, 0.0) for col in risk_features]], columns=risk_features)
@@ -443,11 +497,12 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
     avg_weekly_logged_hours = total_logged_hours / (_burnout_window_days() / 7.0)
     capacity_hours_per_week = max(1.0, float(user_doc.get("capacityHoursPerWeek") or 40.0))
 
-    work_day_start = _parse_local_time_to_minutes(user_doc.get("workDayStartLocal"))
-    work_day_end = _parse_local_time_to_minutes(user_doc.get("workDayEndLocal"))
+    # Default 09:00 (540 min) / 18:00 (1080 min) when user hasn't set their hours
+    work_day_start = _parse_local_time_to_minutes(user_doc.get("workDayStartLocal")) or 540
+    work_day_end = _parse_local_time_to_minutes(user_doc.get("workDayEndLocal")) or 1080
 
     after_hours_worklog_ratio = 0.0
-    if worklogs and work_day_start is not None and work_day_end is not None:
+    if worklogs:
         after_hours_count = 0
         for wl in worklogs:
             minutes_utc = (wl["date"].hour * 60) + wl["date"].minute
@@ -489,7 +544,9 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
     for task in recent_tasks:
         for change in task.get("statusHistory") or []:
             changed_by = change.get("changedBy")
-            if changed_by is not None and str(changed_by) != user_id_str:
+            # FIX: skip if changedBy is null/missing OR if it's a different user
+            # Previously: null changedBy leaked to ALL co-assignees on shared tasks
+            if changed_by is None or str(changed_by) != user_id_str:
                 continue
 
             changed_at = _as_utc_datetime(change.get("changedAt"))
@@ -698,13 +755,13 @@ def predict_burnout(req: PredictBurnoutRequest) -> Dict[str, Any]:
     return {
         "ok": True,
         "userId": req.userId,
-        "burnoutRiskScore": outcome["burnoutRiskScore"],
+        "burnoutRiskScore": float(outcome["burnoutRiskScore"] or 0.0),
         "burnoutRiskLevel": outcome["burnoutRiskLevel"],
-        "burnoutConfidence": outcome["burnoutConfidence"],
+        "burnoutConfidence": float(outcome["burnoutConfidence"] or 0.0),
         "probabilitiesByLevel": outcome["probabilitiesByLevel"],
-        "overdueOpenTaskRatio": overdue_ratio,
-        "overduePenaltyApplied": overdue_penalty,
-        "features": {col: float(X.iloc[0][col]) for col in X.columns},
+        "overdueOpenTaskRatio": float(overdue_ratio or 0.0),
+        "overduePenaltyApplied": float(overdue_penalty or 0.0),
+        "features": {col: float(X.iloc[0][col] if X.iloc[0][col] is not None else 0.0) for col in X.columns},
         "modelVersion": burnout_model_version,
         "featureVersion": burnout_metadata.get("featureVersion", "burnout_v1_mongo_export"),
         "windowDays": _burnout_window_days(),

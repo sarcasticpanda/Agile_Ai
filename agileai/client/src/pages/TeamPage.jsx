@@ -459,7 +459,7 @@ export const TeamPage = () => {
                             api.addProjectMember({ id: projectId, data: { email: talent.email, role: 'developer' }})
                               .then(() => {
                                 toast.success(`Added to project and team!`);
-                                queryClient.invalidateQueries(['projects']);
+                                queryClient.invalidateQueries({ queryKey: ['projects'] });
                               })
                               .catch(() => toast.error('Claimed but failed to add to project'));
                           });

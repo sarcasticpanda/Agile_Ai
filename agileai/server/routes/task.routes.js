@@ -46,4 +46,8 @@ router.delete('/:id/worklog/:wid', protect, deleteWorklog);
 router.post('/:id/worklog/start', protect, startWorklogTimer);
 router.post('/:id/worklog/stop', protect, stopWorklogTimer);
 
+// Plural aliases for API consistency
+router.post('/:id/worklogs', protect, addWorklog);
+router.delete('/:id/worklogs/:wid', protect, deleteWorklog);
+
 export default router;

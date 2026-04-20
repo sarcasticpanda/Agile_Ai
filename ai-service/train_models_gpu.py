@@ -1,5 +1,23 @@
+"""
+DEPRECATED — DO NOT RUN
+========================
+This script is an early prototype using SYNTHETIC data and DIFFERENT feature names.
+
+  train_models_gpu.py RISK_FEATURES: ['velocity_ratio', 'commitment_ratio', ...]
+  api.py RISK_FEATURES:              ['blocked_ratio', 'blocking_ratio', ...]
+
+Running this script will overwrite models/risk_features.pkl with incompatible
+feature names, causing ALL risk predictions to crash immediately.
+It also overwrites effort_features.pkl with different column names.
+
+The active training pipeline is: train_models.py / retrain_candidates.py
+"""
+import sys
+print("DEPRECATED SCRIPT — see train_models.py and retrain_candidates.py instead.")
+print("This script has incompatible feature definitions and must NOT be run.")
+sys.exit(1)
+
 import os
-import urllib.request
 import pandas as pd
 import numpy as np
 import xgboost as xgb

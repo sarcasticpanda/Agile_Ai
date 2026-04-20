@@ -131,8 +131,8 @@ export const SharedBoardPage = () => {
   }, [tasks]);
 
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin';
-  const isPM = user?.role === 'pm';
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isPM = user?.role?.toLowerCase() === 'pm';
 
   const toIdString = (value) => {
     if (!value) return null;
@@ -179,7 +179,7 @@ export const SharedBoardPage = () => {
     const activeTaskRecord = tasks.find(t => t._id === activeId);
     if (!activeTaskRecord) return;
 
-    if (user.role === 'developer' && !taskHasUserAssignment(activeTaskRecord, user._id)) {
+    if (user?.role?.toLowerCase() === 'developer' && !taskHasUserAssignment(activeTaskRecord, user._id)) {
       toast.error("You can only move tasks that are assigned to you.");
       return;
     }
@@ -407,6 +407,7 @@ export const SharedBoardPage = () => {
                   column={column} 
                   tasks={tasksByStatus[column.id] || []}
                   onTaskClick={(t) => setSelectedTaskId(t._id)}
+                  onAddTask={() => setShowCreateModal(true)}
                 />
               ))}
               

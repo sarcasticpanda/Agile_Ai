@@ -26,8 +26,27 @@ export const updateUserRole = async (req, res) => {
     isActive: user.isActive
   };
 
-  if (role) user.role = role;
-  if (status) user.status = status;
+  const activatingPending =
+    status && String(status).toLowerCase() === 'active' && String(user.status || '').toLowerCase() === 'pending';
+
+  if (activatingPending) {
+    user.status = 'active';
+    if (role) {
+      const r = String(role).toLowerCase();
+      if (r === 'admin') {
+        return apiResponse(res, 400, false, null, 'Cannot assign admin role when activating an account');
+      }
+      user.role = r === 'pm' ? 'pm' : 'developer';
+    } else if (user.requestedRole === 'pm') {
+      user.role = 'pm';
+    } else {
+      user.role = 'developer';
+    }
+    user.requestedRole = null;
+  } else {
+    if (role) user.role = role;
+    if (status) user.status = status;
+  }
   if (managedBy !== undefined) user.managedBy = managedBy;
   if (isActive !== undefined) user.isActive = isActive;
 
@@ -52,7 +71,11 @@ export const updateUserRole = async (req, res) => {
   }
 
   // Optional: Create an Audit Log if role or status changed
-  if ((role && oldState.role !== role) || (status && oldState.status !== status)) {
+  if (
+    (role && oldState.role !== role) ||
+    (status && oldState.status !== status) ||
+    (activatingPending && oldState.role !== user.role)
+  ) {
     await AuditLog.create({
       user: req.user._id,
       action: 'USER_ACCOUNT_UPDATED',

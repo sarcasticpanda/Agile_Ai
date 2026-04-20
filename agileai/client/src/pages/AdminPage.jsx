@@ -309,7 +309,12 @@ export const AdminPage = () => {
                           <p className="text-xs text-slate-500">{user.email}</p>
                         </div>
                       </td>
-                      <td className="p-4 font-black uppercase text-xs tracking-widest text-slate-600 dark:text-slate-400">{user.role}</td>
+                      <td className="p-4 font-black uppercase text-xs tracking-widest text-slate-600 dark:text-slate-400">
+                        {user.requestedRole === 'pm' ? 'PM (requested)' : 'Developer'}
+                        <span className="block font-mono font-normal text-[10px] text-slate-400 normal-case mt-0.5">
+                          stored role: {user.role}
+                        </span>
+                      </td>
                       <td className="p-4 text-xs font-mono text-slate-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="p-4 text-right space-x-2">
                         <Button 

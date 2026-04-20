@@ -110,16 +110,20 @@ function activeTaskResponsibilityWeight(task, userId) {
 
   const logs = Array.isArray(task?.worklogs) ? task.worklogs : [];
   const totalHours = logs.reduce((sum, log) => sum + safeNumber(Number(log?.hours || 0)), 0);
+
+  // FIX: If ANY worklogs exist on the task, use worklog-proportional allocation.
+  // Do NOT fall through to equal-split if worklogs exist but this user logged 0h.
+  // A co-assignee with 0h logged gets 0 weight — they earned no credit.
   if (totalHours > 0) {
     const userHours = logs.reduce((sum, log) => {
       if (toIdString(log?.user) !== uid) return sum;
       return sum + safeNumber(Number(log?.hours || 0));
     }, 0);
-    if (userHours > 0) {
-      return Math.max(0, Math.min(1, userHours / totalHours));
-    }
+    // userHours=0 correctly returns 0 (no credit for no work)
+    return Math.max(0, Math.min(1, userHours / totalHours));
   }
 
+  // No worklogs on task at all — fall back to contributionPercent or equal-split
   if (Array.isArray(task?.assignees) && task.assignees.length > 0) {
     const matched = task.assignees.find((entry) => toIdString(entry?.user) === uid);
     if (matched) {
@@ -242,8 +246,9 @@ function computeBurnoutContext(userId, scopedTasks, { now, twoWeekStart, capacit
 }
 
 export const calculateBurndown = async (sprintId) => {
+  // Ideal line uses current startDate→endDate window (includes PM-extended endDate).
   const sprint = await Sprint.findById(sprintId)
-    .select('_id projectId startDate endDate createdAt')
+    .select('_id projectId startDate endDate createdAt originalEndDateAtStart wasExtended')
     .lean();
   if (!sprint) throw new Error('Sprint not found');
 

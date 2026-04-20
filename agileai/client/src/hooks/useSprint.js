@@ -14,7 +14,7 @@ export const useSprint = (projectId) => {
   const createSprintMutation = useMutation({
     mutationFn: sprintsApi.createSprint,
     onSuccess: () => {
-      queryClient.invalidateQueries(['sprints', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
       toast.success('Sprint created successfully');
     },
     onError: (error) => toast.error(error?.response?.data?.message || 'Failed to create sprint'),
@@ -23,7 +23,7 @@ export const useSprint = (projectId) => {
   const startSprintMutation = useMutation({
     mutationFn: sprintsApi.startSprint,
     onSuccess: () => {
-      queryClient.invalidateQueries(['sprints', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
       toast.success('Sprint started');
     },
   });
@@ -31,7 +31,7 @@ export const useSprint = (projectId) => {
   const completeSprintMutation = useMutation({
     mutationFn: sprintsApi.completeSprint,
     onSuccess: () => {
-      queryClient.invalidateQueries(['sprints', projectId]);
+      queryClient.invalidateQueries({ queryKey: ['sprints', projectId] });
       toast.success('Sprint completed');
     },
   });

@@ -6,7 +6,6 @@ import useProjectStore from '../store/projectStore';
 import * as sprintsApi from '../api/sprints.api';
 import * as aiApi from '../api/ai.api';
 import { FullPageSpinner } from '../components/ui/Spinner';
-
 export const AIInsightsPage = () => {
   const { activeProject } = useProjectStore();
   const [selectedSprintId, setSelectedSprintId] = useState('');

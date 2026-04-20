@@ -13,14 +13,14 @@ export const useNotifications = () => {
   const markAsReadMutation = useMutation({
     mutationFn: notificationsApi.markNotificationRead,
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 
   const markAllAsReadMutation = useMutation({
     mutationFn: notificationsApi.markAllNotificationsRead,
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
       toast.success('All notifications marked as read');
     },
   });
@@ -28,7 +28,7 @@ export const useNotifications = () => {
   const deleteNotificationMutation = useMutation({
     mutationFn: notificationsApi.deleteNotification,
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 

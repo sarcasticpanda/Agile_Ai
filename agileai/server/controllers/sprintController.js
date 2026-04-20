@@ -131,13 +131,11 @@ export const createSprint = async (req, res) => {
 
     const invalidMembers = memberIds.filter((id) => !allowedMemberIds.has(toIdString(id)));
     if (invalidMembers.length > 0) {
-      return apiResponse(
-        res,
-        400,
-        false,
-        { invalidMembers },
-        'All sprint members must belong to the selected project'
-      );
+      // Auto-add free-pool devs to the project
+      const newProjectMembers = invalidMembers.map(id => ({ user: id }));
+      await Project.findByIdAndUpdate(projectId, {
+        $push: { members: { $each: newProjectMembers } }
+      });
     }
 
     validatedMemberIds = memberIds;

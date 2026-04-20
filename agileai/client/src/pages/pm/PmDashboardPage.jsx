@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import useProjectStore from '../../store/projectStore';
-import { Layers, Bolt, Activity, Users, Plus, AlertTriangle, UserCheck, UserPlus } from 'lucide-react';
+import { Layers, Bolt, Activity, Users, Plus, AlertTriangle, UserCheck, UserPlus, Shield } from 'lucide-react';
 import axiosInstance from '../../api/axiosInstance';
 import { getSprints } from '../../api/sprints.api';
+import { getSprintRisk } from '../../api/ai.api';
+import { useQuery } from '@tanstack/react-query';
 import CreateSprintModal from '../../components/modals/CreateSprintModal';
-
 export const PmDashboardPage = () => {
   const { user } = useAuthStore();
   const { activeProject, setActiveProject } = useProjectStore();
@@ -30,6 +31,18 @@ export const PmDashboardPage = () => {
   const [currentSprint, setCurrentSprint] = useState(null);
   const [sprintProgress, setSprintProgress] = useState({ completed: 0, remaining: 0, percent: 0 });
   const [isCreateSprintModalOpen, setIsCreateSprintModalOpen] = useState(false);
+
+  // Fetch sprint risk score whenever active sprint changes
+  const { data: sprintRiskRes } = useQuery({
+    queryKey: ['sprint-risk', currentSprint?._id],
+    queryFn: () => getSprintRisk(currentSprint._id),
+    enabled: !!currentSprint?._id,
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+  });
+  const sprintRisk = sprintRiskRes?.data;
+  const riskLevel = sprintRisk?.riskLevel?.toLowerCase() || null;
+  const riskScore = sprintRisk?.riskScore ?? null;
 
   useEffect(() => {
     fetchDashboardData();
@@ -215,6 +228,18 @@ export const PmDashboardPage = () => {
                 <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm">
                   Ends {new Date(currentSprint.endDate).toLocaleDateString()}
                 </p>
+                {/* Sprint Risk Badge */}
+                {riskLevel && (
+                  <div className={`mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                    riskLevel === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    : riskLevel === 'medium' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  }`}>
+                    <Shield size={11} />
+                    AI Risk: {riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)}
+                    {riskScore !== null && <span className="opacity-70 ml-1">({riskScore.toFixed(0)}%)</span>}
+                  </div>
+                )}
               </div>
               
               <div className="flex-1 w-full max-w-xl">
