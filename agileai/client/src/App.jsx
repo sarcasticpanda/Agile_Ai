@@ -115,7 +115,7 @@ function App() {
         <Route path="/projects/:projectId/backlog" element={<ProtectedRoute><BacklogPage /></ProtectedRoute>} />
         <Route path="/projects/:projectId/board" element={<ProtectedRoute><SharedBoardPage /></ProtectedRoute>} />
         <Route path="/projects/:projectId/sprints/:sprintId" element={<ProtectedRoute><SharedBoardPage /></ProtectedRoute>} />
-        <Route path="/projects/:projectId/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/analytics" element={<RoleRoute roles={['admin', 'pm']}><AnalyticsPage /></RoleRoute>} />
         <Route path="/projects/:projectId/team" element={<ProtectedRoute><TeamPage /></ProtectedRoute>} />
         
         {/* Global Nav Routes */}

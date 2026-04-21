@@ -153,26 +153,39 @@ export const getAssignmentWarnings = async ({
 
     const projectedPointsLoad = currentPointsLoad + incomingPointsLoad;
 
-    const capacityHoursPerWeek = Number(user?.capacityHoursPerWeek || 40);
+    const rawCapacityHours = Number(user?.capacityHoursPerWeek);
+    const capacityHoursPerWeek =
+      Number.isFinite(rawCapacityHours) && rawCapacityHours > 0 ? rawCapacityHours : null;
     const capacityStoryPoints =
-      (Math.max(1, capacityHoursPerWeek) * sprintWeeks) / DEFAULT_HOURS_PER_POINT;
+      capacityHoursPerWeek != null
+        ? (capacityHoursPerWeek * sprintWeeks) / DEFAULT_HOURS_PER_POINT
+        : null;
 
-    const burnoutScore = Number(user?.aiBurnoutRiskScore || 0);
-    const burnoutLevel = String(user?.aiBurnoutRiskLevel || '').toLowerCase();
+    const rawBurnoutScore = Number(user?.aiBurnoutRiskScore);
+    const burnoutScore = Number.isFinite(rawBurnoutScore) ? rawBurnoutScore : null;
+    const burnoutLevel = user?.aiBurnoutRiskLevel
+      ? String(user.aiBurnoutRiskLevel).toLowerCase()
+      : null;
 
     const warnings = [];
 
-    if (burnoutLevel === 'high' || burnoutScore >= 70) {
+    if (burnoutLevel === 'high' || (burnoutScore != null && burnoutScore >= 70)) {
       warnings.push({
         code: 'burnout_high',
         severity: 'high',
-        message: `High burnout risk (${Math.round(burnoutScore)}). Consider redistributing work.`,
+        message: `High burnout risk (${Math.round(burnoutScore ?? 0)}). Consider redistributing work.`,
       });
-    } else if (burnoutLevel === 'medium' || burnoutScore >= 45) {
+    } else if (burnoutLevel === 'medium' || (burnoutScore != null && burnoutScore >= 45)) {
       warnings.push({
         code: 'burnout_medium',
         severity: 'medium',
-        message: `Medium burnout risk (${Math.round(burnoutScore)}). Assign carefully.`,
+        message: `Medium burnout risk (${Math.round(burnoutScore ?? 0)}). Assign carefully.`,
+      });
+    } else if (!burnoutLevel && burnoutScore == null) {
+      warnings.push({
+        code: 'burnout_unavailable',
+        severity: 'medium',
+        message: 'Burnout signal unavailable. Recommendation confidence reduced.',
       });
     }
 
@@ -184,18 +197,26 @@ export const getAssignmentWarnings = async ({
       });
     }
 
-    const overloadRatio = capacityStoryPoints > 0 ? projectedPointsLoad / capacityStoryPoints : 0;
-    if (overloadRatio >= 1.3) {
+    if (capacityStoryPoints != null && capacityStoryPoints > 0) {
+      const overloadRatio = projectedPointsLoad / capacityStoryPoints;
+      if (overloadRatio >= 1.3) {
+        warnings.push({
+          code: 'capacity_overload_high',
+          severity: 'high',
+          message: `Projected load ${projectedPointsLoad.toFixed(1)} pts exceeds estimated capacity ${capacityStoryPoints.toFixed(1)} pts.`,
+        });
+      } else if (overloadRatio >= 1.1) {
+        warnings.push({
+          code: 'capacity_overload_medium',
+          severity: 'medium',
+          message: `Projected load is near capacity (${projectedPointsLoad.toFixed(1)} / ${capacityStoryPoints.toFixed(1)} pts).`,
+        });
+      }
+    } else {
       warnings.push({
-        code: 'capacity_overload_high',
-        severity: 'high',
-        message: `Projected load ${projectedPointsLoad.toFixed(1)} pts exceeds estimated capacity ${capacityStoryPoints.toFixed(1)} pts.`,
-      });
-    } else if (overloadRatio >= 1.1) {
-      warnings.push({
-        code: 'capacity_overload_medium',
+        code: 'capacity_unavailable',
         severity: 'medium',
-        message: `Projected load is near capacity (${projectedPointsLoad.toFixed(1)} / ${capacityStoryPoints.toFixed(1)} pts).`,
+        message: 'Weekly capacity is not configured for this user. Recommendation confidence reduced.',
       });
     }
 
@@ -209,6 +230,18 @@ export const getAssignmentWarnings = async ({
 
     const hasHigh = warnings.some((w) => w.severity === 'high');
     const hasMedium = warnings.some((w) => w.severity === 'medium');
+    const recommendation = hasHigh ? 'avoid' : hasMedium ? 'caution' : 'ok';
+
+    const reasonCodes = warnings.map((warning) => warning.code);
+    if (!hasHigh && !hasMedium) {
+      reasonCodes.push('no_assignment_warnings');
+    }
+    const recommendationReason =
+      recommendation === 'avoid'
+        ? 'High-severity assignment advisories detected.'
+        : recommendation === 'caution'
+          ? 'One or more medium-severity assignment advisories detected.'
+          : 'No assignment advisories detected.';
 
     rows.push({
       userId,
@@ -219,7 +252,7 @@ export const getAssignmentWarnings = async ({
             email: user.email,
             capacityHoursPerWeek,
             burnoutRiskScore: burnoutScore,
-            burnoutRiskLevel: burnoutLevel || null,
+            burnoutRiskLevel: burnoutLevel,
           }
         : {
             _id: userId,
@@ -227,7 +260,7 @@ export const getAssignmentWarnings = async ({
             email: null,
             capacityHoursPerWeek,
             burnoutRiskScore: burnoutScore,
-            burnoutRiskLevel: burnoutLevel || null,
+            burnoutRiskLevel: burnoutLevel,
           },
       metrics: {
         activeOpenTasks: activeUserTasks.length,
@@ -238,10 +271,13 @@ export const getAssignmentWarnings = async ({
         currentStoryPointsLoad: Number(currentPointsLoad.toFixed(2)),
         incomingStoryPointsLoad: Number(incomingPointsLoad.toFixed(2)),
         projectedStoryPointsLoad: Number(projectedPointsLoad.toFixed(2)),
-        estimatedCapacityStoryPoints: Number(capacityStoryPoints.toFixed(2)),
+        estimatedCapacityStoryPoints:
+          capacityStoryPoints != null ? Number(capacityStoryPoints.toFixed(2)) : null,
       },
       warnings,
-      recommendation: hasHigh ? 'avoid' : hasMedium ? 'caution' : 'ok',
+      recommendation,
+      recommendationReason,
+      recommendationReasonCodes: reasonCodes,
     });
   }
 

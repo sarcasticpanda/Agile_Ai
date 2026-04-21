@@ -96,11 +96,27 @@ export const getSprints = async (req, res) => {
   }
 
   const sprints = await Sprint.find(query)
-    .populate('tasks')
     .populate('members', 'name avatar role')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
 
-  apiResponse(res, 200, true, sprints, 'Sprints fetched successfully');
+  // Attach tasks from authoritative Task.sprint
+  const sprintIds = sprints.map((s) => s._id);
+  const allTasks = await Task.find({ sprint: { $in: sprintIds } }).lean();
+  
+  const tasksBySprint = {};
+  for (const t of allTasks) {
+    const sid = String(t.sprint);
+    if (!tasksBySprint[sid]) tasksBySprint[sid] = [];
+    tasksBySprint[sid].push(t);
+  }
+
+  const sprintsWithTasks = sprints.map((s) => ({
+    ...s,
+    tasks: tasksBySprint[String(s._id)] || [],
+  }));
+
+  apiResponse(res, 200, true, sprintsWithTasks, 'Sprints fetched successfully');
 };
 
 export const createSprint = async (req, res) => {
@@ -155,8 +171,8 @@ export const createSprint = async (req, res) => {
 
 export const getSprintById = async (req, res) => {
   const sprint = await Sprint.findById(req.params.id)
-    .populate('tasks')
-    .populate('members', 'name avatar role');
+    .populate('members', 'name avatar role')
+    .lean();
 
   if (!sprint) {
     return apiResponse(res, 404, false, null, 'Sprint not found');
@@ -165,6 +181,9 @@ export const getSprintById = async (req, res) => {
   if (!(await ensureSprintAccess(req, res, sprint))) {
     return;
   }
+
+  const tasks = await Task.find({ sprint: sprint._id }).lean();
+  sprint.tasks = tasks;
 
   apiResponse(res, 200, true, sprint, 'Sprint fetched successfully');
 };
@@ -279,7 +298,7 @@ export const startSprint = async (req, res) => {
 };
 
 export const completeSprint = async (req, res) => {
-  const sprint = await Sprint.findById(req.params.id).populate('tasks');
+  const sprint = await Sprint.findById(req.params.id);
 
   if (!sprint) {
     return apiResponse(res, 404, false, null, 'Sprint not found');
@@ -289,12 +308,14 @@ export const completeSprint = async (req, res) => {
     return;
   }
 
+  const tasks = await Task.find({ sprint: sprint._id }).lean();
+
   // Calculate points based on tasks in this sprint
-  const completedPoints = sprint.tasks
+  const completedPoints = tasks
     .filter((task) => task.status === 'done')
     .reduce((total, task) => total + (task.storyPoints || 0), 0);
 
-  const totalPoints = sprint.tasks.reduce((total, task) => total + (task.storyPoints || 0), 0);
+  const totalPoints = tasks.reduce((total, task) => total + (task.storyPoints || 0), 0);
 
   sprint.status = 'completed';
   sprint.completedAt = new Date();
@@ -313,10 +334,10 @@ export const completeSprint = async (req, res) => {
   await sprint.save();
 
   queueSprintAiRiskRefresh(sprint._id);
-  queueBurnoutRefreshForTasks(sprint.tasks || []);
+  queueBurnoutRefreshForTasks(tasks);
 
   // Move incomplete tasks back to backlog
-  const incompleteTasks = sprint.tasks.filter((task) => task.status?.toLowerCase() !== 'done');
+  const incompleteTasks = tasks.filter((task) => task.status?.toLowerCase() !== 'done');
   for (let task of incompleteTasks) {
     await Task.findByIdAndUpdate(task._id, { sprint: null });
   }

@@ -143,6 +143,11 @@ function activeTaskResponsibilityWeight(task, userId) {
 }
 
 function resolveTaskCompletedAt(task) {
+  const currentStatus = String(task?.status || '').toLowerCase();
+  if (currentStatus !== 'done') {
+    return null;
+  }
+
   if (task?.completedAt) {
     const completedAt = new Date(task.completedAt);
     if (!Number.isNaN(completedAt.getTime())) {
@@ -162,7 +167,7 @@ function resolveTaskCompletedAt(task) {
     }
   }
 
-  if (String(task?.status || '').toLowerCase() === 'done' && task?.updatedAt) {
+  if (task?.updatedAt) {
     const updatedAt = new Date(task.updatedAt);
     if (!Number.isNaN(updatedAt.getTime())) {
       return updatedAt;
@@ -170,6 +175,47 @@ function resolveTaskCompletedAt(task) {
   }
 
   return null;
+}
+
+function parseDateMs(value) {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  const ms = parsed.getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function latestTaskContextActivityAt(scopedTasks) {
+  const tasks = Array.isArray(scopedTasks) ? scopedTasks : [];
+  let latestMs = 0;
+
+  const commitDate = (value) => {
+    const ms = parseDateMs(value);
+    if (ms > latestMs) latestMs = ms;
+  };
+
+  for (const task of tasks) {
+    commitDate(task?.lastActivityAt);
+    commitDate(task?.updatedAt);
+    commitDate(task?.startedAt);
+    commitDate(task?.completedAt);
+    commitDate(task?.reopenedAt);
+
+    const logs = Array.isArray(task?.worklogs) ? task.worklogs : [];
+    for (const log of logs) {
+      commitDate(log?.date);
+      commitDate(log?.startedAt);
+      commitDate(log?.endedAt);
+      commitDate(log?.createdAt);
+      commitDate(log?.updatedAt);
+    }
+
+    const history = Array.isArray(task?.statusHistory) ? task.statusHistory : [];
+    for (const entry of history) {
+      commitDate(entry?.changedAt);
+    }
+  }
+
+  return latestMs > 0 ? new Date(latestMs) : null;
 }
 
 function computeBurnoutContext(userId, scopedTasks, { now, twoWeekStart, capacityHoursPerWeek }) {
@@ -221,12 +267,36 @@ function computeBurnoutContext(userId, scopedTasks, { now, twoWeekStart, capacit
     return sum + loggedInWindow;
   }, 0) / 2;
 
-  const normalizedCapacity = Math.max(1, safeNumber(Number(capacityHoursPerWeek || 40)));
-  const loadRatio = weeklyLoggedHours / normalizedCapacity;
+  const rawCapacity = Number(capacityHoursPerWeek);
+  const hasCapacityData = Number.isFinite(rawCapacity) && rawCapacity > 0;
+  const normalizedCapacity = hasCapacityData ? rawCapacity : null;
+  const loadRatio = hasCapacityData ? weeklyLoggedHours / normalizedCapacity : null;
+
+  const capacityAwareLoadComponent = hasCapacityData ? Math.min(100, loadRatio * 100) * 0.45 : 0;
+  const blockedPressureWithCapacity = Math.min(
+    100,
+    blockedRatio * 70 + Math.min(30, weightedBlockedLoad * 30)
+  );
+  const overduePressureWithCapacity = Math.min(
+    100,
+    overdueRatio * 70 + Math.min(30, weightedOverdueLoad * 30)
+  );
+  const capacityAwareBlockedComponent = blockedPressureWithCapacity * 0.3;
+  const capacityAwareOverdueComponent = overduePressureWithCapacity * 0.25;
+
+  // Without explicit capacity, use assignment-weighted absolute load pressure so
+  // unassigning/splitting tasks has a visible impact on burnout.
+  const noCapacityActiveLoadPressure = Math.min(100, weightedActiveLoad * 30);
+  const noCapacityHoursPressure = Math.min(100, weeklyLoggedHours * 2.5);
+  const noCapacityLoadComponent = Math.max(noCapacityActiveLoadPressure, noCapacityHoursPressure) * 0.35;
+  const noCapacityBlockedComponent = Math.min(100, weightedBlockedLoad * 45) * 0.35;
+  const noCapacityOverdueComponent = Math.min(100, weightedOverdueLoad * 45) * 0.3;
 
   const burnoutScore = Number(
     clamp(
-      Math.min(100, loadRatio * 100) * 0.45 + blockedRatio * 100 * 0.3 + overdueRatio * 100 * 0.25,
+      hasCapacityData
+        ? capacityAwareLoadComponent + capacityAwareBlockedComponent + capacityAwareOverdueComponent
+        : noCapacityLoadComponent + noCapacityBlockedComponent + noCapacityOverdueComponent,
       0,
       100
     ).toFixed(2)
@@ -239,6 +309,12 @@ function computeBurnoutContext(userId, scopedTasks, { now, twoWeekStart, capacit
     blockedOpenTasks,
     overdueOpenTasks,
     weeklyLoggedHours: Number(weeklyLoggedHours.toFixed(2)),
+    capacityHoursPerWeek: hasCapacityData ? Number(normalizedCapacity.toFixed(2)) : null,
+    hasCapacityData,
+    loadRatio: hasCapacityData ? Number(loadRatio.toFixed(4)) : null,
+    weightedActiveLoad: Number(weightedActiveLoad.toFixed(4)),
+    weightedBlockedLoad: Number(weightedBlockedLoad.toFixed(4)),
+    weightedOverdueLoad: Number(weightedOverdueLoad.toFixed(4)),
     blockedRatio,
     overdueRatio,
     burnoutScore,
@@ -426,13 +502,13 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
     const projectContext = computeBurnoutContext(member.user._id, tasks, {
       now,
       twoWeekStart,
-      capacityHoursPerWeek: member?.user?.capacityHoursPerWeek || 40,
+      capacityHoursPerWeek: member?.user?.capacityHoursPerWeek,
     });
 
     const globalContext = computeBurnoutContext(member.user._id, allUserTasks, {
       now,
       twoWeekStart,
-      capacityHoursPerWeek: member?.user?.capacityHoursPerWeek || 40,
+      capacityHoursPerWeek: member?.user?.capacityHoursPerWeek,
     });
 
     const totalPoints = projectContext.userTasks.reduce(
@@ -445,7 +521,9 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
       0
     );
 
-    const capacityHoursPerWeek = Math.max(1, safeNumber(Number(member?.user?.capacityHoursPerWeek || 40)));
+    const capacityRaw = Number(member?.user?.capacityHoursPerWeek);
+    const capacityHoursPerWeek =
+      Number.isFinite(capacityRaw) && capacityRaw > 0 ? Number(capacityRaw.toFixed(2)) : null;
 
     const burnoutHistory = Array.isArray(member?.user?.aiBurnoutHistory)
       ? member.user.aiBurnoutHistory
@@ -458,11 +536,51 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
         ? Number((recentHistory[recentHistory.length - 1] - recentHistory[0]).toFixed(2))
         : 0;
 
+    const aiBurnoutRiskScoreRaw = Number(member?.user?.aiBurnoutRiskScore);
+    const aiBurnoutRiskScore = Number.isFinite(aiBurnoutRiskScoreRaw)
+      ? Number(aiBurnoutRiskScoreRaw.toFixed(2))
+      : null;
+
     const projectBurnoutScore = projectContext.burnoutScore;
     const globalBurnoutScore = globalContext.burnoutScore;
     const overallBurnoutScore = Number(
       clamp(globalBurnoutScore * 0.7 + projectBurnoutScore * 0.3, 0, 100).toFixed(2)
     );
+
+    const latestProjectActivityAt = latestTaskContextActivityAt(projectContext.userTasks);
+    const latestProjectActivityAtMs = parseDateMs(latestProjectActivityAt);
+    const aiBurnoutLastAnalyzedAt = member?.user?.aiBurnoutLastAnalyzed
+      ? new Date(member.user.aiBurnoutLastAnalyzed)
+      : null;
+    const aiBurnoutLastAnalyzedAtMs = parseDateMs(aiBurnoutLastAnalyzedAt);
+    const hasAiBurnout = aiBurnoutRiskScore !== null && aiBurnoutRiskScore !== undefined;
+    const aiBurnoutStaleByActivity =
+      hasAiBurnout && latestProjectActivityAtMs > 0
+        ? aiBurnoutLastAnalyzedAtMs <= 0 || aiBurnoutLastAnalyzedAtMs < latestProjectActivityAtMs
+        : !hasAiBurnout;
+
+    let preferredBurnoutScore = null;
+    let preferredBurnoutSource = 'Pending';
+    const contextBurnout = Number.isFinite(overallBurnoutScore)
+      ? overallBurnoutScore
+      : Number.isFinite(projectBurnoutScore)
+        ? projectBurnoutScore
+        : null;
+
+    if (hasAiBurnout && !aiBurnoutStaleByActivity && contextBurnout != null) {
+      const aiWeight = sprintId ? 0.45 : 0.6;
+      const contextWeight = 1 - aiWeight;
+      preferredBurnoutScore = Number(
+        clamp(aiBurnoutRiskScore * aiWeight + contextBurnout * contextWeight, 0, 100).toFixed(2)
+      );
+      preferredBurnoutSource = sprintId ? 'AI + Sprint Context' : 'AI + Context';
+    } else if (hasAiBurnout && !aiBurnoutStaleByActivity) {
+      preferredBurnoutScore = aiBurnoutRiskScore;
+      preferredBurnoutSource = 'AI';
+    } else if (contextBurnout != null) {
+      preferredBurnoutScore = contextBurnout;
+      preferredBurnoutSource = hasAiBurnout ? 'Context (AI stale)' : 'Context';
+    }
 
     return {
       user: member.user,
@@ -475,10 +593,16 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
       weeklyLoggedHours: projectContext.weeklyLoggedHours,
       globalWeeklyLoggedHours: globalContext.weeklyLoggedHours,
       capacityHoursPerWeek,
+      hasCapacityData: Boolean(projectContext.hasCapacityData),
       projectBurnoutScore,
       globalBurnoutScore,
       overallBurnoutScore,
-      aiBurnoutRiskScore: safeNumber(Number(member?.user?.aiBurnoutRiskScore || 0)),
+      aiBurnoutRiskScore,
+      aiBurnoutLastAnalyzedAt,
+      latestProjectActivityAt,
+      aiBurnoutStaleByActivity,
+      preferredBurnoutScore,
+      preferredBurnoutSource,
       aiBurnoutTrendDelta,
       burnoutHistorySamples: burnoutHistory.length,
       completionRate:

@@ -23,7 +23,6 @@ import useAuthStore from '../store/authStore';
 import useProjectStore from '../store/projectStore';
 import axiosInstance from '../api/axiosInstance';
 import * as tasksApi from '../api/tasks.api';
-import { useDeveloperWorkload } from '../hooks/useDeveloperWorkload';
 
 const COLUMNS = [
   { id: 'todo', title: 'To Do' },
@@ -72,8 +71,6 @@ export const SharedBoardPage = () => {
     }
   }, [projectId]);
 
-  const { workloads, loading: workloadsLoading } = useDeveloperWorkload(projectId, targetSprintId);
-
   const activeSprint = useMemo(() => {
     return (sprints || []).find(s => s._id === targetSprintId);
   }, [sprints, targetSprintId]);
@@ -90,27 +87,48 @@ export const SharedBoardPage = () => {
 
   // Helper for recommendation
   const projectDevs = useMemo(() => {
-    return (projectMembers || []).filter((member) => {
-      if (!member?.user || member.role === 'pm') return false;
-      if (sprintMemberIdSet.size === 0) return true;
+    const fromProjectMembers = (projectMembers || [])
+      .map((member) => {
+        const userObj = member?.user && typeof member.user === 'object' ? member.user : null;
+        const memberId = userObj?._id || member?.user || null;
+        if (!memberId) return null;
 
-      const memberId = member.user?._id || member.user;
-      return sprintMemberIdSet.has(String(memberId));
-    });
-  }, [projectMembers, sprintMemberIdSet]);
+        const memberRole = String(member?.role || userObj?.role || '').toLowerCase();
+        if (memberRole === 'pm' || memberRole === 'admin') return null;
 
-  let recommendedDevId = null;
-  if (projectDevs.length > 0 && targetSprintId && targetSprintId !== 'backlog') {
-    let minLoad = Infinity;
-    projectDevs.forEach(dev => {
-      const devId = dev.user._id || dev.user;
-      const load = workloads[devId] || 0;
-      if (load < minLoad) {
-        minLoad = load;
-        recommendedDevId = devId;
-      }
-    });
-  }
+        if (sprintMemberIdSet.size > 0 && !sprintMemberIdSet.has(String(memberId))) {
+          return null;
+        }
+
+        return {
+          id: String(memberId),
+          name: userObj?.name || member?.name || 'Unknown member',
+          role: memberRole || 'developer',
+        };
+      })
+      .filter(Boolean);
+
+    if (fromProjectMembers.length > 0) {
+      return fromProjectMembers;
+    }
+
+    // Fallback: use sprint members if project members payload is empty/malformed.
+    return (activeSprint?.members || [])
+      .map((member) => {
+        const memberId = member?._id || member;
+        if (!memberId) return null;
+
+        const memberRole = String(member?.role || '').toLowerCase();
+        if (memberRole === 'pm' || memberRole === 'admin') return null;
+
+        return {
+          id: String(memberId),
+          name: member?.name || `User ${String(memberId).slice(-4)}`,
+          role: memberRole || 'developer',
+        };
+      })
+      .filter(Boolean);
+  }, [projectMembers, sprintMemberIdSet, activeSprint]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -173,6 +191,11 @@ export const SharedBoardPage = () => {
 
     if (!over) return;
 
+    if (String(activeSprint?.status || '').toLowerCase() === 'completed') {
+      toast.error('Completed sprint is read-only. Move tasks from backlog planning instead.');
+      return;
+    }
+
     const activeId = active.id;
     const overId = over.id;
 
@@ -197,9 +220,25 @@ export const SharedBoardPage = () => {
     }
 
     if (targetContainer && activeTaskRecord.status !== targetContainer) {
+      if (user?.role?.toLowerCase() === 'developer') {
+        if (targetContainer !== 'inprogress') {
+          toast.error('Use Stop Timer & Log from My Tasks to move tasks to Review, Done, or Todo.');
+          return;
+        }
+
+        const hasMyActiveTimer = (activeTaskRecord?.activeTimers || []).some(
+          (timer) => toIdString(timer?.user) === String(user?._id)
+        );
+
+        if (!hasMyActiveTimer) {
+          toast.error('Start your timer from My Tasks before moving task to In Progress.');
+          return;
+        }
+      }
+
       updateTaskStatus({ id: activeId, status: targetContainer }).catch(err => {
          console.error(err);
-         toast.error("Failed to move task");
+         toast.error(err?.response?.data?.message || "Failed to move task");
       });
     }
   };
@@ -297,6 +336,7 @@ export const SharedBoardPage = () => {
 
   const riskScore = typeof activeSprint?.aiRiskScore === 'number' ? activeSprint.aiRiskScore : null;
   const riskLevel = (activeSprint?.aiRiskLevel || '').toLowerCase();
+  const isCompletedSprintView = String(activeSprint?.status || '').toLowerCase() === 'completed';
   const riskBadgeClass =
     riskLevel === 'high'
       ? 'bg-red-50 text-red-700 border-red-200'
@@ -348,13 +388,21 @@ export const SharedBoardPage = () => {
               <>
                 <Button 
                   size="sm"
-                  className="bg-primary hover:bg-primary/90 text-white font-bold text-xs"
-                  onClick={() => setShowCreateModal(true)}
+                  className="bg-primary hover:bg-primary/90 text-white font-bold text-xs disabled:opacity-60"
+                  onClick={() => {
+                    if (isCompletedSprintView) {
+                      toast.error('Completed sprint is read-only. Create new work in backlog or a planning sprint.');
+                      return;
+                    }
+                    setShowCreateModal(true);
+                  }}
+                  disabled={isCompletedSprintView}
                 >
                   <Plus size={14} className="mr-1" /> New Task
                 </Button>
                 <Button 
                   variant="primary" 
+                  disabled={isCompletedSprintView}
                   onClick={() => {
                     completeSprint(activeSprint._id).then(() => {
                       const pfx = isPM ? '/pm' : '';
@@ -362,12 +410,18 @@ export const SharedBoardPage = () => {
                     });
                   }}
                 >
-                  Complete Sprint
+                  {isCompletedSprintView ? 'Sprint Completed' : 'Complete Sprint'}
                 </Button>
               </>
             )}
           </div>
         </div>
+
+        {isCompletedSprintView && (
+          <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+            This sprint is completed and read-only. Create or move work from backlog/planning sprint contexts.
+          </div>
+        )}
 
         {/* Filter Bar */}
         <div className="py-3 flex items-center justify-between">
@@ -407,7 +461,13 @@ export const SharedBoardPage = () => {
                   column={column} 
                   tasks={tasksByStatus[column.id] || []}
                   onTaskClick={(t) => setSelectedTaskId(t._id)}
-                  onAddTask={() => setShowCreateModal(true)}
+                  onAddTask={() => {
+                    if (isCompletedSprintView) {
+                      toast.error('Completed sprint is read-only.');
+                      return;
+                    }
+                    setShowCreateModal(true);
+                  }}
                 />
               ))}
               
@@ -489,28 +549,28 @@ export const SharedBoardPage = () => {
                   multiple
                   className="w-full h-28 bg-transparent border border-slate-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 >
-                  {projectDevs.map(m => {
-                    const dId = m.user._id;
-                    const name = m.user.name;
-                    const load = workloads[dId] || 0;
-                    const isRecommended = dId === recommendedDevId;
-                    
-                    let label = name;
-                    if (targetSprintId && targetSprintId !== 'backlog') {
-                      label += ` • ${load} Tasks`;
-                    }
-                    if (isRecommended) {
-                      label += ` ★ Rec`;
-                    }
-                    
+                  {projectDevs.length === 0 && (
+                    <option value="" disabled>
+                      No developer members available. Add devs in Project Team first.
+                    </option>
+                  )}
+
+                  {projectDevs.map(dev => {
+                    const dId = dev.id;
+                    const name = dev.name;
+
                     return (
                       <option key={dId} value={dId}>
-                        {label}
+                        {name}
                       </option>
                     );
                   })}
                 </select>
-                <p className="mt-1 text-[11px] text-slate-500">Tip: hold Ctrl/Cmd to select multiple assignees.</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {projectDevs.length === 0
+                    ? 'No eligible developers found for this sprint. Add developers to the project/team and reopen this modal.'
+                    : 'Tip: hold Ctrl/Cmd to select multiple assignees. Recommendations and warnings are generated from backend assignment advisories at submit time.'}
+                </p>
               </div>
               <div className="flex justify-end gap-3 pt-2 border-t border-slate-100 dark:border-border-dark">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>

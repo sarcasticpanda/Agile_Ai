@@ -217,43 +217,43 @@ export const getTeamStats = async (req, res) => {
   const project = await ensureProjectAccess(req, res, projectId);
   if (!project) return;
 
-  const memberIds = Array.isArray(project.members)
-    ? project.members
-        .map((member) => (member?.user ? String(member.user) : null))
-        .filter(Boolean)
-    : [];
-
   const refreshCutoffMs = Date.now() - 2 * 60 * 1000;
-  if (memberIds.length > 0) {
-    const candidates = await User.find({
-      _id: { $in: memberIds },
-      role: 'developer',
-    })
-      .select('_id aiBurnoutRiskScore aiBurnoutLastAnalyzed')
-      .lean();
-
-    const staleDeveloperIds = candidates
-      .filter((user) => {
-        const scoreMissing = user?.aiBurnoutRiskScore === null || user?.aiBurnoutRiskScore === undefined;
-        if (scoreMissing) return true;
-
-        const lastAnalyzed = user?.aiBurnoutLastAnalyzed ? new Date(user.aiBurnoutLastAnalyzed).getTime() : 0;
-        if (!Number.isFinite(lastAnalyzed) || lastAnalyzed <= 0) return true;
-
-        return lastAnalyzed < refreshCutoffMs;
-      })
-      .map((user) => user._id);
-
-    if (staleDeveloperIds.length > 0) {
-      await Promise.allSettled(
-        staleDeveloperIds.map((userId) => refreshUserAiBurnoutNow(userId, { pushHistory: false }))
-      );
-    }
-  }
-
-  const result = await analyticsService.calculateTeamStats(projectId, {
+  let result = await analyticsService.calculateTeamStats(projectId, {
     sprintId: sprintId || null,
   });
+
+  const staleDeveloperIds = Array.from(
+    new Set(
+      (result || [])
+        .filter((entry) => String(entry?.user?.role || '').toLowerCase() === 'developer')
+        .filter((entry) => {
+          const aiScoreMissing = entry?.aiBurnoutRiskScore === null || entry?.aiBurnoutRiskScore === undefined;
+          if (aiScoreMissing) return true;
+
+          const lastAnalyzedMs = entry?.aiBurnoutLastAnalyzedAt
+            ? new Date(entry.aiBurnoutLastAnalyzedAt).getTime()
+            : 0;
+
+          if (!Number.isFinite(lastAnalyzedMs) || lastAnalyzedMs <= 0) return true;
+          if (lastAnalyzedMs < refreshCutoffMs) return true;
+
+          return Boolean(entry?.aiBurnoutStaleByActivity);
+        })
+        .map((entry) => String(entry?.user?._id || ''))
+        .filter(Boolean)
+    )
+  );
+
+  if (staleDeveloperIds.length > 0) {
+    await Promise.allSettled(
+      staleDeveloperIds.map((userId) => refreshUserAiBurnoutNow(userId, { pushHistory: false }))
+    );
+
+    result = await analyticsService.calculateTeamStats(projectId, {
+      sprintId: sprintId || null,
+    });
+  }
+
   apiResponse(res, 200, true, result, 'Team stats fetched successfully');
 };
 
@@ -263,10 +263,10 @@ export const getCompletionStats = async (req, res) => {
   const accessSprint = await ensureSprintAccess(req, res, sprintId);
   if (!accessSprint) return;
 
-  const sprint = await Sprint.findById(sprintId).populate('tasks');
+  const sprint = await Sprint.findById(sprintId);
   if (!sprint) return apiResponse(res, 404, false, null, 'Sprint not found');
 
-  const tasks = sprint.tasks;
+  const tasks = await Task.find({ sprint: sprintId }).lean();
   const totalCounts = tasks.length;
   const completedCounts = tasks.filter(t => t.status === 'done').length;
 

@@ -43,7 +43,8 @@ export const SocketProvider = ({ children }) => {
     if (!user?._id) return undefined;
 
     const socket = io(SOCKET_URL, {
-      transports: ['websocket'],
+      // Start with polling and upgrade to websocket when possible to avoid hard failures on dev restarts.
+      transports: ['polling', 'websocket'],
       autoConnect: true,
     });
     const onConnect = () => {

@@ -213,7 +213,12 @@ const DeveloperProfileModal = ({ isOpen, onClose, developer }) => {
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-4 border border-slate-100 dark:border-border-dark">
               <div className="text-xs text-slate-500 mb-1 flex items-center gap-1"><Activity size={14}/> Capacity</div>
-              <div className="text-xl font-black text-slate-800 dark:text-white">{developer.capacityHoursPerWeek || 40} <span className="text-sm font-medium text-slate-400">hrs/wk</span></div>
+              <div className="text-xl font-black text-slate-800 dark:text-white">
+                {Number.isFinite(Number(developer.capacityHoursPerWeek)) && Number(developer.capacityHoursPerWeek) > 0
+                  ? `${Number(developer.capacityHoursPerWeek).toFixed(1)} `
+                  : 'Pending '}
+                <span className="text-sm font-medium text-slate-400">hrs/wk</span>
+              </div>
             </div>
             <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-4 border border-slate-100 dark:border-border-dark">
               <div className="text-xs text-slate-500 mb-1 flex items-center gap-1"><Zap size={14}/> Active Sprint Velocity</div>

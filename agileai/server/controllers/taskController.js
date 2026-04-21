@@ -194,35 +194,193 @@ const parseDateOrNull = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const isCompletedSprintStatus = (status) => String(status || '').toLowerCase() === 'completed';
+
+const ensureTaskSprintMutable = async (
+  res,
+  task,
+  message = 'This task belongs to a completed sprint and is read-only'
+) => {
+  if (!task?.sprint) return true;
+
+  const sprint = await Sprint.findById(task.sprint).select('status').lean();
+  if (!sprint) return true;
+
+  if (isCompletedSprintStatus(sprint.status)) {
+    apiResponse(res, 409, false, null, message);
+    return false;
+  }
+
+  return true;
+};
+
+const normalizeObjectIdArrayInput = (rawValues = []) => {
+  const values = Array.isArray(rawValues) ? rawValues : [];
+  const ids = [];
+  const invalidIds = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const candidate = value && typeof value === 'object' && value._id ? value._id : value;
+    const id = toIdString(candidate);
+    if (!id || id === 'null' || id === 'undefined') continue;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      invalidIds.push(id);
+      continue;
+    }
+
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+
+  return { ids, invalidIds };
+};
+
+const createsBlockedByCycle = async ({ taskId, initialBlockerIds = [] }) => {
+  const targetId = toIdString(taskId);
+  if (!targetId) return false;
+
+  const queue = Array.from(
+    new Set(
+      initialBlockerIds
+        .map((id) => toIdString(id))
+        .filter((id) => id && id !== 'null' && id !== 'undefined')
+    )
+  );
+
+  const visited = new Set(queue);
+
+  while (queue.length > 0) {
+    const batch = queue.splice(0, 100);
+    const tasks = await Task.find({ _id: { $in: batch } }).select('_id blockedBy').lean();
+
+    for (const currentTask of tasks) {
+      const blockers = Array.isArray(currentTask?.blockedBy)
+        ? currentTask.blockedBy
+            .map((id) => toIdString(id))
+            .filter((id) => id && id !== 'null' && id !== 'undefined')
+        : [];
+
+      for (const blockerId of blockers) {
+        if (blockerId === targetId) {
+          return true;
+        }
+
+        if (!visited.has(blockerId)) {
+          visited.add(blockerId);
+          queue.push(blockerId);
+        }
+      }
+    }
+  }
+
+  return false;
+};
+
+const validateBlockedByIds = async ({ taskId = null, projectId, blockedByIds = [] }) => {
+  const normalizedTaskId = taskId ? toIdString(taskId) : null;
+  const normalizedProjectId = toIdString(projectId);
+
+  if (normalizedTaskId && blockedByIds.includes(normalizedTaskId)) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'Task cannot be blocked by itself',
+    };
+  }
+
+  if (blockedByIds.length === 0) {
+    return { ok: true };
+  }
+
+  const blockerTasks = await Task.find({ _id: { $in: blockedByIds } })
+    .select('_id project blockedBy')
+    .lean();
+
+  const foundIdSet = new Set(blockerTasks.map((task) => toIdString(task._id)));
+  const missingIds = blockedByIds.filter((id) => !foundIdSet.has(id));
+  if (missingIds.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      message: `One or more blocker tasks do not exist (${missingIds.slice(0, 3).join(', ')})`,
+    };
+  }
+
+  const crossProject = blockerTasks.find((blockerTask) => toIdString(blockerTask.project) !== normalizedProjectId);
+  if (crossProject) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'Blocker tasks must belong to the same project',
+    };
+  }
+
+  if (normalizedTaskId) {
+    const hasCycle = await createsBlockedByCycle({
+      taskId: normalizedTaskId,
+      initialBlockerIds: blockedByIds,
+    });
+
+    if (hasCycle) {
+      return {
+        ok: false,
+        status: 400,
+        message: 'Circular blocker dependency detected',
+      };
+    }
+  }
+
+  return { ok: true };
+};
+
 const findActiveTimerIndex = (task, userId) => {
   const uid = toIdString(userId);
   const timers = Array.isArray(task?.activeTimers) ? task.activeTimers : [];
   return timers.findIndex((entry) => toIdString(entry?.user) === uid);
 };
 
-const autoStopTimerForStatusTransition = ({ task, userId, newStatus }) => {
-  const timerIndex = findActiveTimerIndex(task, userId);
-  if (timerIndex < 0) return;
+const autoStopTimerForStatusTransition = ({ task, userId, newStatus, stopAll = false }) => {
+  const timers = Array.isArray(task?.activeTimers) ? task.activeTimers : [];
+  if (!timers.length) return;
 
-  const timer = task.activeTimers[timerIndex];
-  const startedAt = parseDateOrNull(timer?.startedAt) || new Date();
+  const uid = toIdString(userId);
   const endedAt = new Date();
-  const hours = Math.max(0.01, (endedAt.getTime() - startedAt.getTime()) / (1000 * 60 * 60));
+  const remainingTimers = [];
 
-  task.worklogs.push({
-    user: userId,
-    hours: Number(hours.toFixed(2)),
-    date: endedAt,
-    startedAt,
-    endedAt,
-    source: 'time-range',
-    activityType: timer?.activityType || 'implementation',
-    outcome: newStatus === 'done' ? 'completed' : 'handoff',
-    progressDelta: null,
-    description: `Auto-logged from active timer during status change to ${newStatus}`,
-  });
+  for (const timer of timers) {
+    const timerUserId = toIdString(timer?.user);
+    const shouldStop = stopAll || (uid && timerUserId === uid);
 
-  task.activeTimers.splice(timerIndex, 1);
+    if (!shouldStop) {
+      remainingTimers.push(timer);
+      continue;
+    }
+
+    const startedAt = parseDateOrNull(timer?.startedAt) || endedAt;
+    const rawHours = Math.max(0.01, (endedAt.getTime() - startedAt.getTime()) / (1000 * 60 * 60));
+    const cappedHours = Math.min(rawHours, 24);
+
+    task.worklogs.push({
+      user: timer?.user || userId,
+      hours: Number(cappedHours.toFixed(2)),
+      date: endedAt,
+      startedAt,
+      endedAt,
+      source: 'time-range',
+      activityType: timer?.activityType || 'implementation',
+      outcome: newStatus === 'done' ? 'completed' : 'handoff',
+      progressDelta: null,
+      description:
+        rawHours > 24
+          ? `Auto-logged from active timer during status change to ${newStatus} (duration capped at 24h)`
+          : `Auto-logged from active timer during status change to ${newStatus}`,
+    });
+  }
+
+  task.activeTimers = remainingTimers;
 };
 
 const getAccessibleProjectIdSet = async (req) => {
@@ -306,7 +464,7 @@ export const getTasks = async (req, res) => {
 
   const tasks = await Task.find(query)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('worklogs.user', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
@@ -398,9 +556,12 @@ export const createTask = async (req, res) => {
   }
 
   if (payload.sprint) {
-    const sprint = await Sprint.findById(payload.sprint).select('projectId');
+    const sprint = await Sprint.findById(payload.sprint).select('projectId status');
     if (!sprint) {
       return apiResponse(res, 400, false, null, 'Sprint not found');
+    }
+    if (isCompletedSprintStatus(sprint.status)) {
+      return apiResponse(res, 409, false, null, 'Cannot add tasks to a completed sprint');
     }
     if (String(sprint.projectId) !== String(payload.project)) {
       return apiResponse(res, 400, false, null, 'Task and sprint must belong to the same project');
@@ -408,6 +569,34 @@ export const createTask = async (req, res) => {
     if (req.user.role !== 'admin' && !accessibleProjectIds.has(String(sprint.projectId))) {
       return apiResponse(res, 403, false, null, 'Not authorized for this sprint');
     }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'blockedBy')) {
+    if (!Array.isArray(payload.blockedBy)) {
+      return apiResponse(res, 400, false, null, 'blockedBy must be an array of task IDs');
+    }
+
+    const { ids: blockedByIds, invalidIds } = normalizeObjectIdArrayInput(payload.blockedBy);
+    if (invalidIds.length > 0) {
+      return apiResponse(
+        res,
+        400,
+        false,
+        null,
+        `Invalid blocker task ID(s): ${invalidIds.slice(0, 3).join(', ')}`
+      );
+    }
+
+    const blockerValidation = await validateBlockedByIds({
+      projectId: payload.project,
+      blockedByIds,
+    });
+
+    if (!blockerValidation.ok) {
+      return apiResponse(res, blockerValidation.status, false, null, blockerValidation.message);
+    }
+
+    payload.blockedBy = blockedByIds;
   }
 
   if (payload.assignees.length > 0) {
@@ -420,12 +609,12 @@ export const createTask = async (req, res) => {
   const task = await Task.create(payload);
 
   if (task.sprint) {
-    await Sprint.findByIdAndUpdate(task.sprint, { $push: { tasks: task._id } });
+    // await Sprint.findByIdAndUpdate(task.sprint, { $push: { tasks: task._id } });
   }
 
   const populatedNew = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar');
@@ -447,7 +636,7 @@ export const createTask = async (req, res) => {
 export const getTaskById = async (req, res) => {
   const task = await Task.findById(req.params.id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar')
@@ -477,6 +666,10 @@ export const updateTask = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   const previousAssigneeIds = assigneeIdsFromTask(task);
 
   const hasAssigneePatch =
@@ -498,6 +691,52 @@ export const updateTask = async (req, res) => {
 
   if (Object.prototype.hasOwnProperty.call(req.body, 'subtasks')) {
     req.body.subtasks = normalizeSubtasksInput(req.body.subtasks);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, 'blockedBy')) {
+    if (req.body.blockedBy == null) {
+      req.body.blockedBy = [];
+    }
+
+    if (!Array.isArray(req.body.blockedBy)) {
+      return apiResponse(res, 400, false, null, 'blockedBy must be an array of task IDs');
+    }
+
+    const { ids: blockedByIds, invalidIds } = normalizeObjectIdArrayInput(req.body.blockedBy);
+    if (invalidIds.length > 0) {
+      return apiResponse(
+        res,
+        400,
+        false,
+        null,
+        `Invalid blocker task ID(s): ${invalidIds.slice(0, 3).join(', ')}`
+      );
+    }
+
+    const blockerValidation = await validateBlockedByIds({
+      taskId: task._id,
+      projectId: task.project,
+      blockedByIds,
+    });
+
+    if (!blockerValidation.ok) {
+      return apiResponse(res, blockerValidation.status, false, null, blockerValidation.message);
+    }
+
+    req.body.blockedBy = blockedByIds;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body, 'sprint') && req.body.sprint) {
+    const targetSprint = await Sprint.findById(req.body.sprint).select('projectId status');
+    if (!targetSprint) {
+      return apiResponse(res, 400, false, null, 'Sprint not found');
+    }
+    if (isCompletedSprintStatus(targetSprint.status)) {
+      return apiResponse(res, 409, false, null, 'Cannot move tasks into a completed sprint');
+    }
+    if (String(targetSprint.projectId) !== String(task.project)) {
+      return apiResponse(res, 400, false, null, 'Task and sprint must belong to the same project');
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(req.body, 'storyPoints')) {
@@ -544,7 +783,7 @@ export const updateTask = async (req, res) => {
 
   const populated = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar');
@@ -579,8 +818,12 @@ export const deleteTask = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   if (task.sprint) {
-    await Sprint.findByIdAndUpdate(task.sprint, { $pull: { tasks: task._id } });
+    // await Sprint.findByIdAndUpdate(task.sprint, { $pull: { tasks: task._id } });
   }
 
   await Task.findByIdAndDelete(req.params.id);
@@ -599,6 +842,10 @@ export const updateTaskStatus = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   const oldStatus = String(task.status || '').toLowerCase();
   const newStatus = String(req.body.status || '').toLowerCase();
 
@@ -609,11 +856,48 @@ export const updateTaskStatus = async (req, res) => {
   if (newStatus === oldStatus) {
     const unchanged = await Task.findById(task._id)
       .populate('assignee', 'name avatar')
-      .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+      .populate('assignees.user', 'name avatar role')
       .populate('subtasks.assignee', 'name avatar')
       .populate('reporter', 'name avatar')
       .populate('statusHistory.changedBy', 'name email avatar role');
     return apiResponse(res, 200, true, unchanged, 'Task status unchanged');
+  }
+
+  const requesterRole = String(req.user?.role || '').toLowerCase();
+  if (requesterRole === 'developer' && newStatus !== 'inprogress') {
+    return apiResponse(
+      res,
+      409,
+      false,
+      null,
+      'Developers must use Stop Timer & Log to move tasks to Review, Done, or Todo'
+    );
+  }
+
+  const activeTimers = Array.isArray(task.activeTimers) ? task.activeTimers : [];
+  if (activeTimers.length > 0 && newStatus !== 'inprogress') {
+    return apiResponse(
+      res,
+      409,
+      false,
+      null,
+      'Stop active timers via Stop & Log before moving this task out of In Progress'
+    );
+  }
+
+  if (
+    String(req.user?.role || '').toLowerCase() === 'developer' &&
+    oldStatus !== 'inprogress' &&
+    newStatus === 'inprogress' &&
+    findActiveTimerIndex(task, req.user._id) < 0
+  ) {
+    return apiResponse(
+      res,
+      409,
+      false,
+      null,
+      'Developers must start a work timer to move a task to In Progress'
+    );
   }
 
   // Push to statusHistory
@@ -639,30 +923,13 @@ export const updateTaskStatus = async (req, res) => {
     task.completedAt = null; // Clear completion since it's reopened
   }
 
-  if (newStatus === 'inprogress' && findActiveTimerIndex(task, req.user._id) < 0) {
-    task.activeTimers.push({
-      user: req.user._id,
-      startedAt: new Date(),
-      activityType: 'implementation',
-      note: 'Started automatically when status moved to In Progress',
-    });
-  }
-
-  if (oldStatus === 'inprogress' && newStatus !== 'inprogress') {
-    autoStopTimerForStatusTransition({
-      task,
-      userId: req.user._id,
-      newStatus,
-    });
-  }
-
   task.status = newStatus;
   task.lastActivityAt = new Date();
   await task.save();
 
   const populated = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar')
@@ -697,10 +964,20 @@ export const updateTaskSprint = async (req, res) => {
   const oldSprint = task.sprint;
   const newSprint = req.body.sprintId;
 
+  if (oldSprint) {
+    const currentSprint = await Sprint.findById(oldSprint).select('status').lean();
+    if (currentSprint && isCompletedSprintStatus(currentSprint.status)) {
+      return apiResponse(res, 409, false, null, 'Completed sprint tasks are read-only and cannot be moved');
+    }
+  }
+
   if (newSprint) {
-    const sprint = await Sprint.findById(newSprint).select('projectId');
+    const sprint = await Sprint.findById(newSprint).select('projectId status');
     if (!sprint) {
       return apiResponse(res, 404, false, null, 'Target sprint not found');
+    }
+    if (isCompletedSprintStatus(sprint.status)) {
+      return apiResponse(res, 409, false, null, 'Cannot move tasks into a completed sprint');
     }
     if (String(sprint.projectId) !== String(task.project)) {
       return apiResponse(res, 400, false, null, 'Task and sprint must belong to the same project');
@@ -714,11 +991,11 @@ export const updateTaskSprint = async (req, res) => {
   await task.save();
 
   if (oldSprint) {
-    await Sprint.findByIdAndUpdate(oldSprint, { $pull: { tasks: task._id } });
+    // await Sprint.findByIdAndUpdate(oldSprint, { $pull: { tasks: task._id } });
   }
 
   if (newSprint) {
-    await Sprint.findByIdAndUpdate(newSprint, { $push: { tasks: task._id } });
+    // await Sprint.findByIdAndUpdate(newSprint, { $push: { tasks: task._id } });
   }
 
   if (oldSprint) {
@@ -732,7 +1009,7 @@ export const updateTaskSprint = async (req, res) => {
 
   const populatedSprintMove = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('reporter', 'name avatar');
 
@@ -756,6 +1033,10 @@ export const reorderTask = async (req, res) => {
   }
 
   if (!(await ensureTaskAccess(req, res, task, { allowAssignee: false }))) {
+    return;
+  }
+
+  if (!(await ensureTaskSprintMutable(res, task))) {
     return;
   }
 
@@ -830,6 +1111,10 @@ export const addWorklog = async (req, res) => {
   }
 
   if (!(await ensureTaskAccess(req, res, task, { allowAssignee: true }))) {
+    return;
+  }
+
+  if (!(await ensureTaskSprintMutable(res, task))) {
     return;
   }
 
@@ -926,6 +1211,10 @@ export const deleteWorklog = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   const worklog = task.worklogs.id(req.params.wid);
   
   if (!worklog) {
@@ -958,6 +1247,10 @@ export const startWorklogTimer = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   if (findActiveTimerIndex(task, req.user._id) >= 0) {
     return apiResponse(res, 400, false, null, 'You already have an active timer for this task');
   }
@@ -986,6 +1279,11 @@ export const startWorklogTimer = async (req, res) => {
     });
     task.status = 'inprogress';
     task.startedAt = task.startedAt || new Date();
+
+    if (oldStatus === 'done') {
+      task.reopenedAt = new Date();
+      task.completedAt = null;
+    }
   }
 
   task.lastActivityAt = new Date();
@@ -998,7 +1296,7 @@ export const startWorklogTimer = async (req, res) => {
 
   const populated = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar')
@@ -1018,12 +1316,37 @@ export const stopWorklogTimer = async (req, res) => {
     return;
   }
 
+  if (!(await ensureTaskSprintMutable(res, task))) {
+    return;
+  }
+
   const timerIndex = findActiveTimerIndex(task, req.user._id);
   if (timerIndex < 0) {
     return apiResponse(res, 400, false, null, 'No active timer found for this task');
   }
 
   const timer = task.activeTimers[timerIndex];
+  const rawRequestedStatus = req.body.status;
+  if (rawRequestedStatus === undefined || rawRequestedStatus === null || String(rawRequestedStatus).trim() === '') {
+    return apiResponse(res, 400, false, null, 'Status after stop is required');
+  }
+
+  const requestedStatus = String(rawRequestedStatus).toLowerCase();
+  if (!ALLOWED_TASK_STATUSES.has(requestedStatus)) {
+    return apiResponse(res, 400, false, null, 'Invalid task status');
+  }
+
+  const remainingActiveTimerCount = Math.max(0, task.activeTimers.length - 1);
+  if (requestedStatus !== 'inprogress' && remainingActiveTimerCount > 0) {
+    return apiResponse(
+      res,
+      409,
+      false,
+      null,
+      'Other collaborators still have active timers. Keep status In Progress until all timers are stopped'
+    );
+  }
+
   let startedAt = parseDateOrNull(req.body.startedAt) || parseDateOrNull(timer?.startedAt) || new Date();
   let endedAt = parseDateOrNull(req.body.endedAt) || new Date();
 
@@ -1092,8 +1415,7 @@ export const stopWorklogTimer = async (req, res) => {
 
   task.activeTimers.splice(timerIndex, 1);
 
-  const requestedStatus = String(req.body.status || '').toLowerCase();
-  if (requestedStatus && ALLOWED_TASK_STATUSES.has(requestedStatus) && requestedStatus !== task.status) {
+  if (requestedStatus !== task.status) {
     const oldStatus = String(task.status || '').toLowerCase();
     task.statusHistory.push({
       from: oldStatus,
@@ -1126,7 +1448,7 @@ export const stopWorklogTimer = async (req, res) => {
 
   const populated = await Task.findById(task._id)
     .populate('assignee', 'name avatar')
-    .populate('assignees.user', 'name avatar role aiBurnoutRiskScore aiBurnoutRiskLevel')
+    .populate('assignees.user', 'name avatar role')
     .populate('subtasks.assignee', 'name avatar')
     .populate('activeTimers.user', 'name avatar')
     .populate('reporter', 'name avatar')

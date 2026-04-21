@@ -206,6 +206,8 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
   const aiSpAt = task?.aiEstimatedStoryPointsAt || null;
   const aiHoursBaseline = typeof task?.aiHoursPerPointBaseline === 'number' ? task.aiHoursPerPointBaseline : null;
   const aiHoursSampleCount = typeof task?.aiHoursPerPointSampleCount === 'number' ? task.aiHoursPerPointSampleCount : null;
+  const hasHoursBaselineSamples = typeof aiHoursSampleCount === 'number' && aiHoursSampleCount > 0;
+  const hasReliableAiHours = aiHours != null && hasHoursBaselineSamples;
   const aiModel = task?.aiEffortModelVersion || null;
   const canCurrentUserUpdateStatus = !isDevOnly || taskHasUserAssignment(task, user?._id);
   const currentContributorNames =
@@ -341,7 +343,7 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                   <select 
                     value={task.status}
                     onChange={(e) => updateStatusMutation.mutate(e.target.value)}
-                    disabled={updateStatusMutation.isPending || !canCurrentUserUpdateStatus}
+                    disabled={updateStatusMutation.isPending || isDevOnly || !canCurrentUserUpdateStatus}
                     className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider outline-none cursor-pointer border border-transparent hover:border-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getTaskStatusColor(task.status)}`}
                   >
                     <option value="todo">TO DO</option>
@@ -349,9 +351,9 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                     <option value="review">IN REVIEW</option>
                     <option value="done">DONE</option>
                   </select>
-                  {isDevOnly && !canCurrentUserUpdateStatus && (
+                  {isDevOnly && (
                     <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-                      Only assigned contributors can change this status.
+                      Developers: status changes are managed through Start Timer / Stop Timer & Log workflow.
                     </span>
                   )}
                   <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${getTaskPriorityColor(task.priority)}`}>
@@ -455,11 +457,13 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                       <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Estimated Hours</span>
                       <span className="text-sm font-extrabold text-slate-800">
-                        {aiHours == null ? 'Pending estimate' : `${aiHours.toFixed(1)}h ${aiConfidence != null ? `(${Math.round(aiConfidence * 100)}% confidence)` : ''}`}
+                        {hasReliableAiHours
+                          ? `${aiHours.toFixed(1)}h ${aiConfidence != null ? `(${Math.round(aiConfidence * 100)}% confidence)` : ''}`
+                          : 'Pending: insufficient completed history'}
                       </span>
                       <div className="text-[10px] text-slate-500 mt-1">
-                        {aiHoursBaseline == null
-                          ? 'Hours baseline: not available yet'
+                        {!hasHoursBaselineSamples || aiHoursBaseline == null
+                          ? 'Hours baseline pending (need completed tasks with points + actual hours)'
                           : `Baseline: ${aiHoursBaseline.toFixed(2)} hrs/pt (n=${aiHoursSampleCount ?? 0})`}
                       </div>
                     </div>
@@ -555,11 +559,14 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                     </div>
                     {task.reopenedAt && (
                       <div className="bg-red-50 border border-red-200 rounded-lg p-3 col-span-2">
-                        <span className="text-[10px] font-bold uppercase text-red-400 block mb-1">Reopened</span>
+                        <span className="text-[10px] font-bold uppercase text-red-400 block mb-1">Last Reopened</span>
                         <span className="text-xs font-semibold text-red-700">{formatLifecycleDate(task.reopenedAt)}</span>
                       </div>
                     )}
                   </div>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Created, Assigned and Started are first-time lifecycle milestones. Last Reopened updates whenever a done task is moved back to active work.
+                  </p>
                 </div>
 
                 {/* Status History Timeline */}
@@ -663,6 +670,9 @@ export const TaskDetailSlideOver = ({ isOpen, onClose, taskId, projectId }) => {
                                 {new Date(log.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             )}
+                            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                              {log.source === 'time-range' ? 'Timer Log' : 'Manual Log'}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-slate-600">
                             <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">{log.hours}h</span>

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageShell } from '../components/layout/PageShell';
 import { useTask } from '../hooks/useTask';
 import { TaskDetailSlideOver } from './TaskDetailPage';
@@ -25,26 +26,91 @@ import {
 import { getTaskPriorityColor } from '../utils/statusColors';
 import { FullPageSpinner } from '../components/ui/Spinner';
 import useAuthStore from '../store/authStore';
+import useProjectStore from '../store/projectStore';
 import axiosInstance from '../api/axiosInstance';
 import * as tasksApi from '../api/tasks.api';
+import * as projectsApi from '../api/projects.api';
 import { toast } from '../components/ui/Toast';
 
 export const BacklogPage = () => {
-  const { projectId } = useParams();
+  const queryClient = useQueryClient();
+  const { projectId: routeProjectId } = useParams();
   const navigate = useNavigate();
-  const { tasks, isLoading: isTasksLoading, createTask } = useTask(projectId, null);
-  const { sprints, isLoading: isSprintsLoading, createSprint, startSprint } = useSprint(projectId);
+  const { activeProject, setActiveProject } = useProjectStore();
+  const activeProjectId = typeof activeProject === 'string' ? activeProject : activeProject?._id;
+  const projectId = routeProjectId || activeProjectId || '';
+
+  const { tasks, isLoading: isTasksLoading, createTask } = useTask(projectId || null, null);
+  const { sprints, isLoading: isSprintsLoading, createSprint, startSprint } = useSprint(projectId || null);
   
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [selectedSprintId, setSelectedSprintId] = useState('backlog');
   const [selectedTask, setSelectedTask] = useState(null);
   const [moveMenuTaskId, setMoveMenuTaskId] = useState(null);
+  const [taskPlacementTarget, setTaskPlacementTarget] = useState('backlog');
+  const [taskPlacementSprintId, setTaskPlacementSprintId] = useState('');
   const [projectMembers, setProjectMembers] = useState([]);
+  const [availableProjects, setAvailableProjects] = useState([]);
+  const [isProjectListLoading, setIsProjectListLoading] = useState(false);
 
   const { user } = useAuthStore();
   const isAdmin = user?.role?.toLowerCase() === 'admin';
   const isPM = user?.role?.toLowerCase() === 'pm';
+
+  const activeProjectTitle =
+    typeof activeProject === 'object'
+      ? activeProject?.title || activeProject?.name || ''
+      : '';
+
+  const currentProjectLabel = useMemo(() => {
+    const fromList = (availableProjects || []).find((project) => project?._id === projectId);
+    if (fromList) return fromList.title || fromList.name || projectId;
+    if (activeProjectTitle) return activeProjectTitle;
+    return projectId;
+  }, [availableProjects, activeProjectTitle, projectId]);
+
+  useEffect(() => {
+    if (routeProjectId && routeProjectId !== activeProjectId) {
+      setActiveProject(routeProjectId);
+    }
+  }, [routeProjectId, activeProjectId, setActiveProject]);
+
+  useEffect(() => {
+    if (routeProjectId) return;
+
+    let cancelled = false;
+    setIsProjectListLoading(true);
+
+    projectsApi
+      .getProjects()
+      .then((res) => {
+        if (cancelled) return;
+
+        const list = Array.isArray(res?.data) ? res.data : [];
+        setAvailableProjects(list);
+
+        if (!projectId && list.length > 0) {
+          setActiveProject(list[0]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableProjects([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsProjectListLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeProjectId, projectId, setActiveProject]);
+
+  const handleProjectContextChange = (nextProjectId) => {
+    const next = (availableProjects || []).find((project) => project?._id === nextProjectId);
+    setActiveProject(next || nextProjectId);
+    setSelectedSprintId('backlog');
+  };
 
   // Fetch project members for assignee picker
   useEffect(() => {
@@ -59,6 +125,19 @@ export const BacklogPage = () => {
   }, [projectId]);
 
   const activeSprints = useMemo(() => (sprints || []).filter(s => s.status !== 'completed'), [sprints]);
+
+  useEffect(() => {
+    if (!isTaskModalOpen) return;
+
+    if (selectedSprintId !== 'backlog' && activeSprints.some((s) => s._id === selectedSprintId)) {
+      setTaskPlacementTarget('sprint');
+      setTaskPlacementSprintId(selectedSprintId);
+      return;
+    }
+
+    setTaskPlacementTarget('backlog');
+    setTaskPlacementSprintId(activeSprints[0]?._id || '');
+  }, [isTaskModalOpen, selectedSprintId, activeSprints]);
   
   const filteredTasks = useMemo(() => {
     if (selectedSprintId === 'backlog') {
@@ -106,15 +185,26 @@ export const BacklogPage = () => {
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
+    if (!projectId) {
+      toast.error('Select a project before creating backlog issues.');
+      return;
+    }
+
     const formData = new FormData(e.target);
     const raw = Object.fromEntries(formData);
     const storyPoints = raw.storyPoints ? Number(raw.storyPoints) : 0;
     const assigneeIds = formData.getAll('assignees').filter(Boolean);
+    const targetSprintId = taskPlacementTarget === 'sprint' ? taskPlacementSprintId : '';
+
+    if (taskPlacementTarget === 'sprint' && !targetSprintId) {
+      toast.error('Select a sprint target for this issue.');
+      return;
+    }
 
     const shouldProceed = await confirmAssignmentWarnings({
       assigneeIds,
       storyPoints,
-      sprintId: selectedSprintId === 'backlog' ? undefined : selectedSprintId,
+      sprintId: targetSprintId || undefined,
     });
 
     if (!shouldProceed) {
@@ -134,7 +224,7 @@ export const BacklogPage = () => {
           ? assigneeIds.map((id) => ({ user: id, contributionPercent: Number((100 / assigneeIds.length).toFixed(2)) }))
           : undefined,
       project: projectId,
-      sprint: selectedSprintId === 'backlog' ? undefined : selectedSprintId,
+      sprint: taskPlacementTarget === 'sprint' ? targetSprintId : undefined,
     };
     await createTask(data);
     setIsTaskModalOpen(false);
@@ -142,6 +232,11 @@ export const BacklogPage = () => {
 
   const handleCreateSprint = async (e) => {
     e.preventDefault();
+    if (!projectId) {
+      toast.error('Select a project before creating a sprint.');
+      return;
+    }
+
     const formData = new FormData(e.target);
     const raw = Object.fromEntries(formData);
     if (!raw.startDate || !raw.endDate) {
@@ -161,12 +256,16 @@ export const BacklogPage = () => {
   const handleMoveToSprint = async (taskId, targetSprintId) => {
     try {
       await tasksApi.updateTaskSprint({ id: taskId, sprintId: targetSprintId === 'backlog' ? null : targetSprintId });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['sprints', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['velocity', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['teamStats', projectId] }),
+      ]);
       toast.success('Task moved successfully');
       setMoveMenuTaskId(null);
-      // Force refetch
-      window.location.reload();
-    } catch {
-      toast.error('Failed to move task');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Failed to move task');
     }
   };
 
@@ -176,7 +275,54 @@ export const BacklogPage = () => {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  if (isTasksLoading || isSprintsLoading) return <FullPageSpinner />;
+  if ((isTasksLoading || isSprintsLoading) && projectId) return <FullPageSpinner />;
+
+  if (!projectId) {
+    return (
+      <div className="flex flex-col h-screen bg-background-light dark:bg-background-dark">
+        <PageShell title="Product Backlog">
+          <div className="h-full flex items-center justify-center">
+            <div className="w-full max-w-xl rounded-2xl border border-border-light dark:border-border-dark bg-white dark:bg-card-dark p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Select Project Context</h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Sprint and backlog operations are project-scoped. Select a project before creating sprints or issues.
+              </p>
+
+              <div className="mt-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Project</label>
+                <select
+                  value={projectId}
+                  onChange={(e) => handleProjectContextChange(e.target.value)}
+                  className="w-full rounded-lg border border-border-light dark:border-border-dark bg-transparent px-3 py-2 text-sm"
+                  disabled={isProjectListLoading}
+                >
+                  <option value="">Select a project</option>
+                  {(availableProjects || []).map((project) => (
+                    <option key={project._id} value={project._id}>
+                      {project.title || project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-4 flex gap-3">
+                <Button onClick={() => navigate(`${isPM ? '/pm' : ''}/projects`)}>Go to Projects</Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (projectId) navigate(`${isPM ? '/pm' : ''}/projects/${projectId}/backlog`);
+                  }}
+                  disabled={!projectId}
+                >
+                  Open Backlog
+                </Button>
+              </div>
+            </div>
+          </div>
+        </PageShell>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-background-light dark:bg-background-dark">
@@ -188,6 +334,23 @@ export const BacklogPage = () => {
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold">B</div>
               <h1 className="text-lg font-bold text-slate-900 dark:text-white">Product Backlog</h1>
+              <span className="text-xs px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                {currentProjectLabel || 'Project'}
+              </span>
+
+              {!routeProjectId && availableProjects.length > 0 && (
+                <select
+                  value={projectId}
+                  onChange={(e) => handleProjectContextChange(e.target.value)}
+                  className="text-xs rounded-lg border border-border-light dark:border-border-dark bg-transparent px-2 py-1"
+                >
+                  {(availableProjects || []).map((project) => (
+                    <option key={project._id} value={project._id}>
+                      {project.title || project.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-xs font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
@@ -469,6 +632,35 @@ export const BacklogPage = () => {
               <p className="mt-1 text-[11px] text-slate-500">Tip: hold Ctrl/Cmd to select multiple assignees.</p>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Place In</label>
+              <select
+                value={taskPlacementTarget}
+                onChange={(e) => setTaskPlacementTarget(e.target.value)}
+                className="w-full bg-transparent border border-border-light dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+              >
+                <option value="backlog">Main Backlog</option>
+                <option value="sprint">Sprint</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Target Sprint</label>
+              <select
+                value={taskPlacementSprintId}
+                onChange={(e) => setTaskPlacementSprintId(e.target.value)}
+                className="w-full bg-transparent border border-border-light dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                disabled={taskPlacementTarget !== 'sprint'}
+              >
+                <option value="">Select sprint</option>
+                {activeSprints.map((sprint) => (
+                  <option key={sprint._id} value={sprint._id}>
+                    {sprint.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           <p className="text-[11px] text-slate-500">
             Story Points estimate complexity/effort (0-13). Priority indicates urgency/business impact. A simple urgent bug can be low points but high priority.
           </p>
@@ -479,6 +671,9 @@ export const BacklogPage = () => {
       {/* Create Sprint Modal */}
       <Modal isOpen={isSprintModalOpen} onClose={() => setIsSprintModalOpen(false)} title="Create Sprint">
         <form onSubmit={handleCreateSprint} className="space-y-4 p-2">
+          <div className="rounded-lg border border-border-light dark:border-border-dark bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+            Sprint will be created for project: <span className="font-bold text-slate-900 dark:text-white">{currentProjectLabel || projectId}</span>
+          </div>
           <Input name="title" label="Sprint Name" placeholder="e.g. Sprint 1" required />
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Sprint Goal (optional)</label>

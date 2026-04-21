@@ -275,11 +275,11 @@ def _compute_hours_per_point(project_id: ObjectId, max_docs: int = 500) -> Dict[
                 "sampleCount": len(ratios),
                 "reason": "limited_project_history",
             }
-        # Fall back to industry-standard 4h per story point
+        # Insufficient project history: do not fabricate a static baseline.
         return {
-            "hoursPerPoint": 4.0,
+            "hoursPerPoint": None,
             "sampleCount": len(ratios),
-            "reason": "industry_default_4h_per_point",
+            "reason": "insufficient_project_history",
         }
 
     return {
@@ -346,9 +346,24 @@ def _risk_feature_row(sprint_doc: Dict[str, Any], sprint_tasks: List[Dict[str, A
 
     assignee_ids = set()
     for t in sprint_tasks:
+        # Include primary assignee
         assignee = t.get("assignee")
         if assignee:
             assignee_ids.add(_oid(str(assignee)) if isinstance(assignee, str) else assignee)
+            
+        # Include co-assignees
+        assignees_arr = t.get("assignees") or []
+        for a in assignees_arr:
+            u = a.get("user")
+            if u:
+                assignee_ids.add(_oid(str(u)) if isinstance(u, str) else u)
+                
+        # Include subtask assignees
+        subtasks_arr = t.get("subtasks") or []
+        for sub in subtasks_arr:
+            u = sub.get("assignee")
+            if u:
+                assignee_ids.add(_oid(str(u)) if isinstance(u, str) else u)
 
     avg_team_burnout_score = 0.0
     max_dev_burnout_score = 0.0
@@ -465,6 +480,32 @@ def _burnout_class_index_to_level_map(prob_size: int) -> Dict[int, str]:
     return {idx: "medium" for idx in range(prob_size)}
 
 
+def _user_task_weight(task_doc: Dict[str, Any], user_id_str: str) -> float:
+    # Use worklogs proportional if available
+    worklogs = task_doc.get("worklogs") or []
+    total_hours = sum(float(wl.get("hours") or 0.0) for wl in worklogs)
+    if total_hours > 0:
+        user_hours = sum(float(wl.get("hours") or 0.0) for wl in worklogs if str(wl.get("user")) == user_id_str)
+        return float(user_hours / total_hours)
+        
+    # Check assignees contribution percent
+    assignees_arr = task_doc.get("assignees") or []
+    for a in assignees_arr:
+        if str(a.get("user")) == user_id_str:
+            pct = float(a.get("contributionPercent") or 100.0)
+            return pct / 100.0
+            
+    # Subtasks
+    subtasks = task_doc.get("subtasks") or []
+    for sub in subtasks:
+        if str(sub.get("assignee")) == user_id_str:
+            return 1.0
+
+    if str(task_doc.get("assignee")) == user_id_str:
+        return 1.0
+        
+    return 0.0
+
 def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, Any]]) -> pd.DataFrame:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=_burnout_window_days())
@@ -495,14 +536,23 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
 
     total_logged_hours = float(sum(w["hours"] for w in worklogs))
     avg_weekly_logged_hours = total_logged_hours / (_burnout_window_days() / 7.0)
-    capacity_hours_per_week = max(1.0, float(user_doc.get("capacityHoursPerWeek") or 40.0))
+    try:
+        capacity_hours_per_week = float(user_doc.get("capacityHoursPerWeek"))
+        if not np.isfinite(capacity_hours_per_week) or capacity_hours_per_week <= 0:
+            capacity_hours_per_week = np.nan
+    except Exception:
+        capacity_hours_per_week = np.nan
 
-    # Default 09:00 (540 min) / 18:00 (1080 min) when user hasn't set their hours
-    work_day_start = _parse_local_time_to_minutes(user_doc.get("workDayStartLocal")) or 540
-    work_day_end = _parse_local_time_to_minutes(user_doc.get("workDayEndLocal")) or 1080
+    work_day_start = _parse_local_time_to_minutes(user_doc.get("workDayStartLocal"))
+    work_day_end = _parse_local_time_to_minutes(user_doc.get("workDayEndLocal"))
 
-    after_hours_worklog_ratio = 0.0
-    if worklogs:
+    after_hours_worklog_ratio = np.nan
+    if (
+        worklogs
+        and work_day_start is not None
+        and work_day_end is not None
+        and work_day_end > work_day_start
+    ):
         after_hours_count = 0
         for wl in worklogs:
             minutes_utc = (wl["date"].hour * 60) + wl["date"].minute
@@ -510,14 +560,21 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
                 after_hours_count += 1
         after_hours_worklog_ratio = after_hours_count / len(worklogs)
 
+    over_capacity_ratio = (
+        float(avg_weekly_logged_hours / capacity_hours_per_week)
+        if np.isfinite(capacity_hours_per_week) and capacity_hours_per_week > 0
+        else np.nan
+    )
+
     blocked_task_ratio = 0.0
     if recent_tasks:
-        blocked_count = 0
+        weighted_total = sum(_user_task_weight(task, user_id_str) for task in recent_tasks)
+        weighted_blocked = 0.0
         for task in recent_tasks:
             blocked_by = task.get("blockedBy") or []
             if task.get("isBlocked") or len(blocked_by) > 0:
-                blocked_count += 1
-        blocked_task_ratio = blocked_count / len(recent_tasks)
+                weighted_blocked += _user_task_weight(task, user_id_str)
+        blocked_task_ratio = weighted_blocked / weighted_total if weighted_total > 0 else 0.0
 
     open_recent_tasks = [
         task for task in recent_tasks if str(task.get("status") or "").lower() != "done"
@@ -525,12 +582,13 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
 
     overdue_open_task_ratio = 0.0
     if open_recent_tasks:
-        overdue_open_count = 0
+        weighted_total_open = sum(_user_task_weight(task, user_id_str) for task in open_recent_tasks)
+        weighted_overdue = 0.0
         for task in open_recent_tasks:
             due_date = _as_utc_datetime(task.get("dueDate"))
             if due_date is not None and due_date < now:
-                overdue_open_count += 1
-        overdue_open_task_ratio = overdue_open_count / len(open_recent_tasks)
+                weighted_overdue += _user_task_weight(task, user_id_str)
+        overdue_open_task_ratio = weighted_overdue / weighted_total_open if weighted_total_open > 0 else 0.0
 
     reopen_events_window = 0
     for task in user_tasks:
@@ -577,7 +635,7 @@ def _burnout_feature_row(user_doc: Dict[str, Any], user_tasks: List[Dict[str, An
         "worklogs_count_window": float(len(worklogs)),
         "avg_weekly_logged_hours": float(avg_weekly_logged_hours),
         "capacity_hours_per_week": float(capacity_hours_per_week),
-        "over_capacity_ratio": float(avg_weekly_logged_hours / capacity_hours_per_week),
+        "over_capacity_ratio": float(over_capacity_ratio),
         "after_hours_worklog_ratio": float(after_hours_worklog_ratio),
         "blocked_task_ratio": float(blocked_task_ratio),
         "overdue_open_task_ratio": float(overdue_open_task_ratio),
@@ -619,19 +677,23 @@ def _burnout_score_and_level(
     }
 
 
-def _overdue_open_task_ratio(user_tasks: List[Dict[str, Any]]) -> float:
+def _overdue_open_task_ratio(user_tasks: List[Dict[str, Any]], user_id_str: str) -> float:
     now = datetime.now(timezone.utc)
     open_tasks = [task for task in user_tasks if str(task.get("status") or "").lower() != "done"]
     if not open_tasks:
         return 0.0
 
-    overdue_count = 0
+    weighted_total_open = sum(_user_task_weight(task, user_id_str) for task in open_tasks)
+    if weighted_total_open <= 0:
+        return 0.0
+
+    weighted_overdue = 0.0
     for task in open_tasks:
         due = _as_utc_datetime(task.get("dueDate"))
         if due is not None and due < now:
-            overdue_count += 1
+            weighted_overdue += _user_task_weight(task, user_id_str)
 
-    return float(overdue_count / len(open_tasks))
+    return float(weighted_overdue / weighted_total_open)
 
 
 @app.post("/estimate-effort")
@@ -697,6 +759,7 @@ def predict_burnout(req: PredictBurnoutRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Burnout model is not loaded")
 
     user_doc = _fetch_user(req.userId)
+    user_id_str = str(user_doc.get("_id") or req.userId)
     user_oid = _oid(req.userId)
     user_tasks = list(
         tasks.find(
@@ -739,7 +802,7 @@ def predict_burnout(req: PredictBurnoutRequest) -> Dict[str, Any]:
     class_idx_to_level = _burnout_class_index_to_level_map(probabilities.shape[0])
     outcome = _burnout_score_and_level(probabilities, class_idx_to_level)
 
-    overdue_ratio = _overdue_open_task_ratio(user_tasks)
+    overdue_ratio = _overdue_open_task_ratio(user_tasks, user_id_str)
     overdue_penalty = min(20.0, overdue_ratio * 30.0)
     adjusted_score = float(np.clip(outcome["burnoutRiskScore"] + overdue_penalty, 0.0, 100.0))
 

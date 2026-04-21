@@ -1,5 +1,8 @@
+import { useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import useAuthStore from '../../store/authStore';
 import { Plus, MoreHorizontal } from 'lucide-react';
+import { TaskCard } from './TaskCard';
 
 const getColumnColor = (id) => {
   switch (id) {

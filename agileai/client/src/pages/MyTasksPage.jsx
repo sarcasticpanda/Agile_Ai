@@ -32,21 +32,6 @@ export const MyTasksPage = () => {
     refetchOnWindowFocus: true,
   });
 
-  const updateStatusStatus = useMutation({
-    mutationFn: async ({ taskId, status }) => {
-      const { data } = await axiosInstance.patch(`/tasks/${taskId}/status`, { status });
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-tasks', user?._id] });
-      invalidateAnalytics();
-      toast.success('Task status updated');
-    },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || 'Failed to update status');
-    }
-  });
-
   const startTimerMutation = useMutation({
     mutationFn: async ({ taskId }) => {
       const { data } = await axiosInstance.post(`/tasks/${taskId}/worklog/start`, {
@@ -186,10 +171,6 @@ export const MyTasksPage = () => {
     return `${hours}h ${minutes}m`;
   };
 
-  const handleStatusChange = (taskId, status) => {
-    updateStatusStatus.mutate({ taskId, status });
-  };
-
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'todo': return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
@@ -297,17 +278,6 @@ export const MyTasksPage = () => {
                 </div>
 
                 <div className="flex items-center gap-3 self-end md:self-center">
-                  <select
-                    value={task.status}
-                    onChange={(e) => handleStatusChange(task._id, e.target.value)}
-                    className="text-sm border border-border-light dark:border-border-dark rounded-md bg-transparent px-3 py-1.5 font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <option value="todo">Todo</option>
-                    <option value="inprogress">In Progress</option>
-                    <option value="review">Review</option>
-                    <option value="done">Done</option>
-                  </select>
-
                   {activeTimer ? (
                     <button
                       onClick={() => {
@@ -316,7 +286,7 @@ export const MyTasksPage = () => {
                       }}
                       className="flex items-center gap-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
                     >
-                      <PlayCircle size={16} /> Stop & Log
+                      <PlayCircle size={16} /> Stop Timer & Log
                     </button>
                   ) : (
                     <button
@@ -324,20 +294,9 @@ export const MyTasksPage = () => {
                       disabled={startTimerMutation.isPending}
                       className="flex items-center gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-60"
                     >
-                      <PlayCircle size={16} /> Start Work
+                      <PlayCircle size={16} /> Start Timer
                     </button>
                   )}
-                  
-                  {/* Phase 5 hook for Worklog Model */}
-                  <button
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setSelectedActiveTimer(null);
-                    }}
-                    className="flex items-center gap-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-                  >
-                    <PlayCircle size={16} /> Worklog
-                  </button>
                 </div>
               </div>
               );

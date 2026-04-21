@@ -18,6 +18,20 @@ const addMinutes = (value, minutes) => {
   return new Date(date.getTime() + minutes * 60000);
 };
 
+const formatElapsedFromStart = (startedAtValue) => {
+  const start = new Date(startedAtValue);
+  if (isNaN(start.getTime())) return '0m';
+
+  const diffMs = Date.now() - start.getTime();
+  if (diffMs <= 0) return '0m';
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+};
+
 export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
   const queryClient = useQueryClient();
   const isStoppingTimer = !!activeTimer;
@@ -30,6 +44,7 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
   const [progressDelta, setProgressDelta] = useState('');
   const [statusAfterStop, setStatusAfterStop] = useState('');
   const [description, setDescription] = useState('');
+  const [durationCapped, setDurationCapped] = useState(false);
 
   const invalidateAnalytics = () => {
     queryClient.invalidateQueries({ queryKey: ['analyticsOverview'] });
@@ -49,6 +64,7 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     setProgressDelta('');
     setStatusAfterStop('');
     setDescription('');
+    setDurationCapped(false);
   };
 
   useEffect(() => {
@@ -58,16 +74,22 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     const now = new Date();
     const minEnd = addMinutes(startedDate, 1) || now;
     const defaultEnd = now > minEnd ? now : minEnd;
-    const elapsedHours = Math.max(0.01, (defaultEnd.getTime() - startedDate.getTime()) / (1000 * 60 * 60));
+    const elapsedHoursRaw = Math.max(0.01, (defaultEnd.getTime() - startedDate.getTime()) / (1000 * 60 * 60));
+    const elapsedHours = Math.min(elapsedHoursRaw, 24);
+    const defaultStartForRange =
+      elapsedHoursRaw > 24
+        ? new Date(defaultEnd.getTime() - 24 * 60 * 60 * 1000)
+        : startedDate;
 
-    setMode('hours');
+    setMode('auto');
     setHours(elapsedHours.toFixed(2));
-    setStartedAt(toLocalInputValue(startedDate));
+    setStartedAt(toLocalInputValue(defaultStartForRange));
     setEndedAt(toLocalInputValue(defaultEnd));
     setActivityType(activeTimer?.activityType || 'implementation');
     setOutcome('progress');
-    setStatusAfterStop('');
+    setStatusAfterStop('inprogress');
     setDescription('Stopped active timer session.');
+    setDurationCapped(elapsedHoursRaw > 24);
   }, [isOpen, isStoppingTimer, activeTimer?.startedAt, activeTimer?.activityType]);
 
   const addWorklog = useMutation({
@@ -113,9 +135,12 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     e.preventDefault();
 
     let parsedHours = Number(hours);
+    const usingAuto = isStoppingTimer && mode === 'auto';
     const usingRange = mode === 'range';
 
-    if (usingRange) {
+    if (usingAuto) {
+      parsedHours = 0;
+    } else if (usingRange) {
       if (!startedAt || !endedAt) {
         return toast.error('Please provide both start and end time');
       }
@@ -139,11 +164,14 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
     }
 
     const payload = {
-      hours: Number(parsedHours.toFixed(2)),
       description: description.trim(),
       activityType,
       outcome,
     };
+
+    if (!usingAuto) {
+      payload.hours = Number(parsedHours.toFixed(2));
+    }
 
     if (usingRange) {
       payload.startedAt = startedAt;
@@ -155,7 +183,10 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
       payload.progressDelta = Number(progressDelta);
     }
 
-    if (isStoppingTimer && statusAfterStop) {
+    if (isStoppingTimer) {
+      if (!statusAfterStop) {
+        return toast.error('Select the next task status before stopping the timer');
+      }
       payload.status = statusAfterStop;
     }
     
@@ -191,7 +222,20 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
         <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Log Method</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid ${isStoppingTimer ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+              {isStoppingTimer && (
+                <button
+                  type="button"
+                  onClick={() => setMode('auto')}
+                  className={`px-3 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                    mode === 'auto'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border-light dark:border-border-dark text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Auto Timer
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setMode('hours')}
@@ -216,9 +260,23 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
               </button>
             </div>
             {isStoppingTimer && (
-              <p className="mt-1 text-[11px] text-slate-500">Stop session can use either manual duration or explicit start/end range.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Auto Timer uses exact session duration. Hours and Time Range are optional overrides.</p>
+            )}
+            {durationCapped && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                Active timer exceeded 24 hours. Default values are capped to 24h so you can submit safely.
+              </p>
             )}
           </div>
+
+          {mode === 'auto' && isStoppingTimer && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Auto logging this session from started time to now.
+              <div className="mt-1 font-semibold">
+                Elapsed: {formatElapsedFromStart(activeTimer?.startedAt)}
+              </div>
+            </div>
+          )}
 
           {mode === 'hours' ? (
             <div>
@@ -235,7 +293,7 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
                 required
               />
             </div>
-          ) : (
+          ) : mode === 'range' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Start Time</label>
@@ -258,7 +316,7 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
                 />
               </div>
             </div>
-          )}
+          ) : null}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -294,13 +352,13 @@ export const WorklogModal = ({ isOpen, onClose, task, activeTimer = null }) => {
 
           {isStoppingTimer && (
             <div>
-              <label className="block text-sm font-medium mb-1">Status After Stop</label>
+              <label className="block text-sm font-medium mb-1">Status After Stop *</label>
               <select
                 value={statusAfterStop}
                 onChange={(e) => setStatusAfterStop(e.target.value)}
                 className="w-full bg-white dark:bg-zinc-950 border border-border-light dark:border-border-dark rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
               >
-                <option value="">Keep current status</option>
+                <option value="inprogress">Keep In Progress</option>
                 <option value="review">Move to Review</option>
                 <option value="done">Move to Done</option>
                 <option value="todo">Move back to Todo</option>

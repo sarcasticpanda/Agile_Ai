@@ -138,9 +138,7 @@ export const AnalyticsPage = () => {
   const burndownData = burndownRes?.data?.data || null;
   const velocityPayload = velocityRes?.data;
   const velocityData = velocityPayload?.data || [];
-  const hasVelocityHistory = velocityData.some(
-    (point) => Number(point?.planned || 0) > 0 || Number(point?.completed || 0) > 0
-  );
+  const hasVelocityHistory = Boolean(velocityPayload?.hasHistory) || velocityData.length > 0;
   const liveVelocitySprint = velocityPayload?.liveSprint || null;
   const velocitySeries = [...velocityData];
   if (liveVelocitySprint) {
@@ -150,9 +148,7 @@ export const AnalyticsPage = () => {
       completed: Number(liveVelocitySprint.completed || 0),
     });
   }
-  const hasVelocitySeriesData = velocitySeries.some(
-    (point) => Number(point?.planned || 0) > 0 || Number(point?.completed || 0) > 0
-  );
+  const hasVelocitySeriesData = velocitySeries.length > 0;
   const teamStats = teamStatsRes?.data || [];
 
   useEffect(() => {
@@ -215,10 +211,19 @@ export const AnalyticsPage = () => {
 
   const sprintRiskData = useMemo(
     () => {
+      const teamBurnoutValues = (teamStats || [])
+        .map((entry) => {
+          const overall = Number(entry?.overallBurnoutScore);
+          if (Number.isFinite(overall)) return overall;
+          const project = Number(entry?.projectBurnoutScore);
+          if (Number.isFinite(project)) return project;
+          return null;
+        })
+        .filter((value) => value != null);
+
       const teamOverallBurnoutAvg =
-        teamStats.length > 0
-          ? teamStats.reduce((sum, entry) => sum + Number(entry?.overallBurnoutScore || entry?.projectBurnoutScore || 0), 0) /
-            teamStats.length
+        teamBurnoutValues.length > 0
+          ? teamBurnoutValues.reduce((sum, value) => sum + value, 0) / teamBurnoutValues.length
           : 0;
 
       return (sprints || []).map((s) => {
@@ -376,10 +381,28 @@ export const AnalyticsPage = () => {
         .map((t) => {
           const aiRaw = t?.aiBurnoutRiskScore;
           const hasAiBurnout = aiRaw !== null && aiRaw !== undefined && Number.isFinite(Number(aiRaw));
-          const projectBurnout = Number(t?.projectBurnoutScore || 0);
-          const globalBurnout = Number(t?.globalBurnoutScore || 0);
-          const overallBurnout = Number(t?.overallBurnoutScore || t?.projectBurnoutScore || 0);
-          const aiBurnout = hasAiBurnout ? Number(aiRaw) : 0;
+          const preferredBurnoutRaw = Number(t?.preferredBurnoutScore);
+          const preferredBurnout = Number.isFinite(preferredBurnoutRaw) ? preferredBurnoutRaw : null;
+          const preferredBurnoutSource = String(t?.preferredBurnoutSource || '').trim();
+          const projectBurnoutRaw = Number(t?.projectBurnoutScore);
+          const globalBurnoutRaw = Number(t?.globalBurnoutScore);
+          const overallBurnoutRaw = Number(t?.overallBurnoutScore);
+          const projectBurnout = Number.isFinite(projectBurnoutRaw) ? projectBurnoutRaw : null;
+          const globalBurnout = Number.isFinite(globalBurnoutRaw) ? globalBurnoutRaw : null;
+          const overallBurnout = Number.isFinite(overallBurnoutRaw)
+            ? overallBurnoutRaw
+            : projectBurnout;
+          const aiBurnout = hasAiBurnout ? Number(aiRaw) : null;
+          const displayBurnout = preferredBurnout ?? aiBurnout ?? overallBurnout ?? projectBurnout;
+          const displayBurnoutSource = preferredBurnout != null && preferredBurnoutSource
+            ? preferredBurnoutSource
+            : hasAiBurnout
+              ? 'AI'
+            : overallBurnout != null
+              ? 'Overall'
+              : projectBurnout != null
+                ? 'Project'
+                : 'Pending';
 
           return {
             member: t?.user?.name || 'Unknown',
@@ -388,13 +411,16 @@ export const AnalyticsPage = () => {
             globalBurnout,
             overallBurnout,
             aiBurnout,
-            displayBurnout: hasAiBurnout ? aiBurnout : overallBurnout,
-            displayBurnoutSource: hasAiBurnout ? 'AI' : 'Overall (fallback)',
+            displayBurnout: displayBurnout == null ? 0 : displayBurnout,
+            displayBurnoutRaw: displayBurnout,
+            displayBurnoutSource,
+            aiBurnoutStaleByActivity: Boolean(t?.aiBurnoutStaleByActivity),
             aiBurnoutTrendDelta: Number(t?.aiBurnoutTrendDelta || 0),
             burnoutHistorySamples: Number(t?.burnoutHistorySamples || 0),
             tasksAssigned: Number(t?.tasksAssigned || 0),
             overdueOpenTasks: Number(t?.overdueOpenTasks || 0),
             blockedOpenTasks: Number(t?.blockedOpenTasks || 0),
+            hasCapacityData: Boolean(t?.hasCapacityData),
           };
         }),
     [teamStats]
@@ -817,7 +843,11 @@ export const AnalyticsPage = () => {
                           }
                           if (name === 'Burnout (AI preferred)') {
                             const source = item?.payload?.displayBurnoutSource || 'Unknown source';
-                            return [`${Number(value || 0).toFixed(1)} (${source})`, name];
+                            const burnoutRaw = item?.payload?.displayBurnoutRaw;
+                            return [
+                              burnoutRaw == null ? `Pending (${source})` : `${Number(burnoutRaw).toFixed(1)} (${source})`,
+                              name,
+                            ];
                           }
                           return [value, name];
                         }}
@@ -841,14 +871,14 @@ export const AnalyticsPage = () => {
                   </ResponsiveContainer>
                 </div>
                 <p className="mt-2 text-[11px] text-slate-500">
-                  Combined member card: effort credit is calculated per developer even on shared tasks, and burnout uses AI first with overall fallback only when AI is missing.
+                  Combined member card: effort credit is calculated per developer even on shared tasks. Burnout uses AI when it is fresher than recent task activity; otherwise it falls back to live analytics context for stable sprint-to-sprint behavior.
                 </p>
                 <div className="mt-3 space-y-1">
                   {memberEffortBurnoutData.map((entry) => (
                     <div key={`effort-burnout-${entry.member}`} className="flex items-center justify-between text-[11px] text-slate-500">
                       <span>{entry.member}</span>
                       <span>
-                        Effort {entry.effort.toFixed(2)} SP | Burnout {entry.displayBurnout.toFixed(1)} ({entry.displayBurnoutSource}) | AI {entry.aiBurnout.toFixed(1)} | Overall {entry.overallBurnout.toFixed(1)} | Trend {entry.aiBurnoutTrendDelta >= 0 ? '+' : ''}{entry.aiBurnoutTrendDelta.toFixed(1)} ({entry.burnoutHistorySamples})
+                        Effort {entry.effort.toFixed(2)} SP | Burnout {entry.displayBurnoutRaw == null ? 'Pending' : entry.displayBurnoutRaw.toFixed(1)} ({entry.displayBurnoutSource}) | AI {entry.aiBurnout == null ? 'Pending' : entry.aiBurnout.toFixed(1)} | Overall {entry.overallBurnout == null ? 'Pending' : entry.overallBurnout.toFixed(1)} | Trend {entry.aiBurnoutTrendDelta >= 0 ? '+' : ''}{entry.aiBurnoutTrendDelta.toFixed(1)} ({entry.burnoutHistorySamples})
                       </span>
                     </div>
                   ))}
@@ -947,7 +977,18 @@ export const AnalyticsPage = () => {
               <span className="text-sm font-black text-slate-800 dark:text-white">{stat.user.name}</span>
               <span className="text-[10px] font-black text-slate-400 uppercase mt-1">Effort: {stat.completedStoryPoints} PTS</span>
               <span className="text-[10px] font-black text-slate-400 uppercase mt-1">
-                Burnout: {Number(stat.aiBurnoutRiskScore || stat.overallBurnoutScore || stat.projectBurnoutScore || 0).toFixed(1)}
+                Logged: {Number(stat.weeklyLoggedHours || 0).toFixed(1)}h/week
+              </span>
+              <span className="text-[10px] font-black text-slate-400 uppercase mt-1">
+                Burnout: {(() => {
+                  const ai = Number(stat.aiBurnoutRiskScore);
+                  if (Number.isFinite(ai)) return ai.toFixed(1);
+                  const overall = Number(stat.overallBurnoutScore);
+                  if (Number.isFinite(overall)) return overall.toFixed(1);
+                  const project = Number(stat.projectBurnoutScore);
+                  if (Number.isFinite(project)) return project.toFixed(1);
+                  return 'Pending';
+                })()}
               </span>
               <div className="w-full h-1 bg-slate-200 dark:bg-zinc-800 rounded-full mt-4 overflow-hidden">
                 <div className="h-full bg-primary" style={{ width: `${stat.completionRate}%` }}></div>
