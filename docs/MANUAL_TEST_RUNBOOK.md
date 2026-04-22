@@ -241,3 +241,9 @@ Use the template in `docs/PHASE0_BASELINE_CONTRACT.md`.
 2. Timer runs while working.
 3. Dev clicks `Stop & Save Log`, keeps `Auto Timer`, fills description and outcome.
 4. PM sees per-dev time and notes on the same task (including shared tasks).
+
+---
+
+## 7) Additional Dev Credentials (for extended testing)
+- Dev5: `dev.qa5.20260423@agileai.com` / `DevQa1234!`
+- Dev6: `dev.qa6.20260423@agileai.com` / `DevQa1234!`
