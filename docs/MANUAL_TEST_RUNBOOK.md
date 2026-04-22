@@ -113,7 +113,7 @@ Use these so you don’t collide with old seed users:
 
 ### If you need existing known users
 These exist in scripts in the repo, but passwords may vary depending on what you last ran:
-- `admin@agileai.com` / `Admin123!` (from `register_users.ps1`)
+- `admin@agileai.com` / `Admin1234!` (from `register_users.ps1`)
 - `pm@agileai.com` / `PM12345!` (from `register_users.ps1`) or `Pm1234!` (from `reset_passwords.mjs`)
 
 Tip: if login fails for a known user, run `Agile_Ai/agileai/server/reset_passwords.mjs` to force a known password state.

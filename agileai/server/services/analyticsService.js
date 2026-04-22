@@ -54,9 +54,14 @@ function getWorklogHours(task, userId) {
   return { totalHours, userHours };
 }
 
-function taskPointsForUser(task, userId, { preferWorklogs = false } = {}) {
+function taskPointsForUser(
+  task,
+  userId,
+  { preferWorklogs = false, storyPointsOverride = null } = {}
+) {
   const uid = toIdString(userId);
-  const storyPoints = safeNumber(Number(task?.storyPoints || 0));
+  const storyPointsSource = storyPointsOverride ?? task?.storyPoints;
+  const storyPoints = safeNumber(Number(storyPointsSource || 0));
 
   if (Array.isArray(task?.subtasks) && task.subtasks.length > 0) {
     const subtaskPoints = task.subtasks
@@ -98,6 +103,16 @@ function taskPointsForUser(task, userId, { preferWorklogs = false } = {}) {
       return toIdString(doneTransition.changedBy) === uid ? storyPoints : 0;
     }
   }
+
+  return 0;
+}
+
+function effectiveTaskStoryPoints(task) {
+  const storyPoints = safeNumber(Number(task?.storyPoints || 0));
+  if (storyPoints > 0) return storyPoints;
+
+  const aiEstimatedStoryPoints = safeNumber(Number(task?.aiEstimatedStoryPoints || 0));
+  if (aiEstimatedStoryPoints > 0) return aiEstimatedStoryPoints;
 
   return 0;
 }
@@ -468,13 +483,22 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
   );
   if (!project) throw new Error('Project not found');
 
+  let sprintMemberIdSet = null;
+  if (sprintId) {
+    const sprint = await Sprint.findById(sprintId).select('members').lean();
+    const sprintMemberIds = Array.isArray(sprint?.members)
+      ? sprint.members.map((id) => toIdString(id)).filter(Boolean)
+      : [];
+    sprintMemberIdSet = new Set(sprintMemberIds);
+  }
+
   const tasksQuery = { project: projectId };
   if (sprintId) {
     tasksQuery.sprint = sprintId;
   }
 
   const tasks = await Task.find(tasksQuery)
-    .select('project sprint status assignee assignees subtasks worklogs storyPoints dueDate isBlocked blockedBy statusHistory')
+    .select('project sprint status assignee assignees subtasks worklogs storyPoints aiEstimatedStoryPoints dueDate isBlocked blockedBy statusHistory')
     .lean();
 
   const projectMemberIds = (project.members || [])
@@ -490,7 +514,7 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
             { 'subtasks.assignee': { $in: projectMemberIds } },
           ],
         })
-          .select('project sprint status assignee assignees subtasks worklogs storyPoints dueDate isBlocked blockedBy statusHistory')
+          .select('project sprint status assignee assignees subtasks worklogs storyPoints aiEstimatedStoryPoints dueDate isBlocked blockedBy statusHistory')
           .lean()
       : [];
 
@@ -499,6 +523,10 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
   const twoWeekStart = new Date(now.getTime() - twoWeekWindowMs);
 
   const teamStats = project.members.map((member) => {
+    const memberId = member?.user?._id;
+    const memberIdStr = toIdString(memberId);
+    const isInSelectedSprint = sprintMemberIdSet ? sprintMemberIdSet.has(memberIdStr) : true;
+
     const projectContext = computeBurnoutContext(member.user._id, tasks, {
       now,
       twoWeekStart,
@@ -511,15 +539,30 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
       capacityHoursPerWeek: member?.user?.capacityHoursPerWeek,
     });
 
-    const totalPoints = projectContext.userTasks.reduce(
-      (sum, task) => sum + safeNumber(taskPointsForUser(task, member.user._id)),
-      0
-    );
-    const completedPoints = projectContext.completedTasks.reduce(
-      (sum, task) =>
-        sum + safeNumber(taskPointsForUser(task, member.user._id, { preferWorklogs: true })),
-      0
-    );
+    const totalPoints = projectContext.userTasks.reduce((sum, task) => {
+      const effectivePoints = effectiveTaskStoryPoints(task);
+      if (effectivePoints <= 0) return sum;
+      return sum + safeNumber(taskPointsForUser(task, member.user._id, { storyPointsOverride: effectivePoints }));
+    }, 0);
+
+    const completedPoints = projectContext.completedTasks.reduce((sum, task) => {
+      const effectivePoints = effectiveTaskStoryPoints(task);
+      if (effectivePoints <= 0) return sum;
+      return sum + safeNumber(taskPointsForUser(task, member.user._id, { preferWorklogs: true, storyPointsOverride: effectivePoints }));
+    }, 0);
+    const projectedOpenPoints = projectContext.activeTasks.reduce((sum, task) => {
+      const effectivePoints = effectiveTaskStoryPoints(task);
+      if (effectivePoints <= 0) return sum;
+      return (
+        sum +
+        safeNumber(
+          taskPointsForUser(task, member.user._id, {
+            preferWorklogs: false,
+            storyPointsOverride: effectivePoints,
+          })
+        )
+      );
+    }, 0);
 
     const capacityRaw = Number(member?.user?.capacityHoursPerWeek);
     const capacityHoursPerWeek =
@@ -549,60 +592,73 @@ export const calculateTeamStats = async (projectId, { sprintId = null } = {}) =>
 
     const latestProjectActivityAt = latestTaskContextActivityAt(projectContext.userTasks);
     const latestProjectActivityAtMs = parseDateMs(latestProjectActivityAt);
+    const latestGlobalActivityAt = latestTaskContextActivityAt(globalContext.userTasks);
+    const latestGlobalActivityAtMs = parseDateMs(latestGlobalActivityAt);
     const aiBurnoutLastAnalyzedAt = member?.user?.aiBurnoutLastAnalyzed
       ? new Date(member.user.aiBurnoutLastAnalyzed)
       : null;
     const aiBurnoutLastAnalyzedAtMs = parseDateMs(aiBurnoutLastAnalyzedAt);
     const hasAiBurnout = aiBurnoutRiskScore !== null && aiBurnoutRiskScore !== undefined;
+    const latestRelevantActivityAtMs = Math.max(latestGlobalActivityAtMs, latestProjectActivityAtMs);
     const aiBurnoutStaleByActivity =
-      hasAiBurnout && latestProjectActivityAtMs > 0
-        ? aiBurnoutLastAnalyzedAtMs <= 0 || aiBurnoutLastAnalyzedAtMs < latestProjectActivityAtMs
+      hasAiBurnout && latestRelevantActivityAtMs > 0
+        ? aiBurnoutLastAnalyzedAtMs <= 0 || aiBurnoutLastAnalyzedAtMs < latestRelevantActivityAtMs
         : !hasAiBurnout;
 
     let preferredBurnoutScore = null;
     let preferredBurnoutSource = 'Pending';
-    const contextBurnout = Number.isFinite(overallBurnoutScore)
-      ? overallBurnoutScore
-      : Number.isFinite(projectBurnoutScore)
-        ? projectBurnoutScore
-        : null;
+    const globalContextBurnout = Number.isFinite(globalBurnoutScore)
+      ? globalBurnoutScore
+      : Number.isFinite(overallBurnoutScore)
+        ? overallBurnoutScore
+        : Number.isFinite(projectBurnoutScore)
+          ? projectBurnoutScore
+          : null;
 
-    if (hasAiBurnout && !aiBurnoutStaleByActivity && contextBurnout != null) {
-      const aiWeight = sprintId ? 0.45 : 0.6;
-      const contextWeight = 1 - aiWeight;
+    // Global burnout must remain comparable across sprints; sprint selection is a view filter.
+    if (hasAiBurnout && !aiBurnoutStaleByActivity && globalContextBurnout != null) {
+      const aiWeight = 0.6;
+      const contextWeight = 0.4;
       preferredBurnoutScore = Number(
-        clamp(aiBurnoutRiskScore * aiWeight + contextBurnout * contextWeight, 0, 100).toFixed(2)
+        clamp(aiBurnoutRiskScore * aiWeight + globalContextBurnout * contextWeight, 0, 100).toFixed(2)
       );
-      preferredBurnoutSource = sprintId ? 'AI + Sprint Context' : 'AI + Context';
+      preferredBurnoutSource = 'AI + Global Context';
     } else if (hasAiBurnout && !aiBurnoutStaleByActivity) {
       preferredBurnoutScore = aiBurnoutRiskScore;
       preferredBurnoutSource = 'AI';
-    } else if (contextBurnout != null) {
-      preferredBurnoutScore = contextBurnout;
-      preferredBurnoutSource = hasAiBurnout ? 'Context (AI stale)' : 'Context';
+    } else if (globalContextBurnout != null) {
+      preferredBurnoutScore = globalContextBurnout;
+      preferredBurnoutSource = hasAiBurnout ? 'Global Context (AI stale)' : 'Global Context';
     }
 
     return {
       user: member.user,
+      isInSelectedSprint,
       tasksAssigned: projectContext.userTasks.length,
       tasksCompleted: projectContext.completedTasks.length,
+      globalTasksAssigned: globalContext.userTasks.length,
+      globalTasksCompleted: globalContext.completedTasks.length,
       storyPoints: Number(totalPoints.toFixed(2)),
       completedStoryPoints: Number(completedPoints.toFixed(2)),
+      projectedOpenStoryPoints: Number(projectedOpenPoints.toFixed(2)),
       blockedOpenTasks: projectContext.blockedOpenTasks,
       overdueOpenTasks: projectContext.overdueOpenTasks,
       weeklyLoggedHours: projectContext.weeklyLoggedHours,
       globalWeeklyLoggedHours: globalContext.weeklyLoggedHours,
       capacityHoursPerWeek,
       hasCapacityData: Boolean(projectContext.hasCapacityData),
+      scopeBurnoutScore: projectBurnoutScore,
       projectBurnoutScore,
       globalBurnoutScore,
       overallBurnoutScore,
       aiBurnoutRiskScore,
       aiBurnoutLastAnalyzedAt,
       latestProjectActivityAt,
+      latestGlobalActivityAt,
       aiBurnoutStaleByActivity,
       preferredBurnoutScore,
       preferredBurnoutSource,
+      selectedScope: sprintId ? 'sprint' : 'project',
       aiBurnoutTrendDelta,
       burnoutHistorySamples: burnoutHistory.length,
       completionRate:

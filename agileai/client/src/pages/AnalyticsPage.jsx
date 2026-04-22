@@ -29,6 +29,7 @@ export const AnalyticsPage = () => {
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedSprintId, setSelectedSprintId] = useState('');
   const [selectedPmScopeId, setSelectedPmScopeId] = useState('');
+  const [showMemberDetails, setShowMemberDetails] = useState(false);
 
   const resolveProjectId = (projectLike) =>
     typeof projectLike === 'string' ? projectLike : projectLike?._id || '';
@@ -150,6 +151,10 @@ export const AnalyticsPage = () => {
   }
   const hasVelocitySeriesData = velocitySeries.length > 0;
   const teamStats = teamStatsRes?.data || [];
+  const selectedSprint = useMemo(
+    () => (sprints || []).find((s) => String(s?._id || '') === String(selectedSprintId || '')) || null,
+    [sprints, selectedSprintId]
+  );
 
   useEffect(() => {
     if (!isAdmin || projectId) return;
@@ -197,6 +202,10 @@ export const AnalyticsPage = () => {
   useEffect(() => {
     setSelectedSprintId('');
   }, [effectiveProjectId]);
+
+  useEffect(() => {
+    setShowMemberDetails(false);
+  }, [effectiveProjectId, selectedSprintId]);
 
   // --- DERIVED DATA ---
 
@@ -374,57 +383,87 @@ export const AnalyticsPage = () => {
     );
   };
 
-  const memberEffortBurnoutData = useMemo(
-    () =>
-      (teamStats || [])
-        .filter((t) => String(t?.user?.role || '').toLowerCase() === 'developer')
-        .map((t) => {
-          const aiRaw = t?.aiBurnoutRiskScore;
-          const hasAiBurnout = aiRaw !== null && aiRaw !== undefined && Number.isFinite(Number(aiRaw));
-          const preferredBurnoutRaw = Number(t?.preferredBurnoutScore);
-          const preferredBurnout = Number.isFinite(preferredBurnoutRaw) ? preferredBurnoutRaw : null;
-          const preferredBurnoutSource = String(t?.preferredBurnoutSource || '').trim();
-          const projectBurnoutRaw = Number(t?.projectBurnoutScore);
-          const globalBurnoutRaw = Number(t?.globalBurnoutScore);
-          const overallBurnoutRaw = Number(t?.overallBurnoutScore);
-          const projectBurnout = Number.isFinite(projectBurnoutRaw) ? projectBurnoutRaw : null;
-          const globalBurnout = Number.isFinite(globalBurnoutRaw) ? globalBurnoutRaw : null;
-          const overallBurnout = Number.isFinite(overallBurnoutRaw)
-            ? overallBurnoutRaw
-            : projectBurnout;
-          const aiBurnout = hasAiBurnout ? Number(aiRaw) : null;
-          const displayBurnout = preferredBurnout ?? aiBurnout ?? overallBurnout ?? projectBurnout;
-          const displayBurnoutSource = preferredBurnout != null && preferredBurnoutSource
-            ? preferredBurnoutSource
-            : hasAiBurnout
-              ? 'AI'
+  const memberEffortBurnoutData = useMemo(() => {
+    const developerRows = (teamStats || [])
+      .filter((t) => String(t?.user?.role || '').toLowerCase() === 'developer')
+      .filter((t) => {
+        if (!selectedSprintId) return true;
+        const scopedAssigned = Number(t?.tasksAssigned || 0);
+        const scopedCompleted = Number(t?.tasksCompleted || 0);
+        const sprintMember = Boolean(t?.isInSelectedSprint);
+        return sprintMember || scopedAssigned > 0 || scopedCompleted > 0;
+      });
+
+    const nameCounts = developerRows.reduce((acc, row) => {
+      const key = String(row?.user?.name || 'Unknown').trim();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return developerRows.map((t) => {
+      const userId = String(t?.user?._id || '');
+      const baseName = String(t?.user?.name || 'Unknown').trim();
+      const hasNameCollision = (nameCounts[baseName] || 0) > 1;
+      const memberLabel = hasNameCollision && userId
+        ? `${baseName} (${userId.slice(-4)})`
+        : baseName;
+
+      const aiRaw = t?.aiBurnoutRiskScore;
+      const hasAiBurnout = aiRaw !== null && aiRaw !== undefined && Number.isFinite(Number(aiRaw));
+      const preferredBurnoutRaw = Number(t?.preferredBurnoutScore);
+      const preferredBurnout = Number.isFinite(preferredBurnoutRaw) ? preferredBurnoutRaw : null;
+      const preferredBurnoutSource = String(t?.preferredBurnoutSource || '').trim();
+      const scopeBurnoutRaw = Number(t?.scopeBurnoutScore ?? t?.projectBurnoutScore);
+      const globalBurnoutRaw = Number(t?.globalBurnoutScore);
+      const overallBurnoutRaw = Number(t?.overallBurnoutScore);
+      const scopeBurnout = Number.isFinite(scopeBurnoutRaw) ? scopeBurnoutRaw : null;
+      const globalBurnout = Number.isFinite(globalBurnoutRaw) ? globalBurnoutRaw : null;
+      const overallBurnout = Number.isFinite(overallBurnoutRaw) ? overallBurnoutRaw : scopeBurnout;
+      const aiBurnout = hasAiBurnout ? Number(aiRaw) : null;
+
+      const displayBurnoutRaw =
+        preferredBurnout ?? aiBurnout ?? globalBurnout ?? overallBurnout ?? scopeBurnout;
+
+      const displayBurnoutSource = preferredBurnout != null && preferredBurnoutSource
+        ? preferredBurnoutSource
+        : hasAiBurnout
+          ? 'AI'
+          : globalBurnout != null
+            ? 'Global Context'
             : overallBurnout != null
-              ? 'Overall'
-              : projectBurnout != null
-                ? 'Project'
+              ? 'Overall Context'
+              : scopeBurnout != null
+                ? 'Scope Context'
                 : 'Pending';
 
-          return {
-            member: t?.user?.name || 'Unknown',
-            effort: Number(t?.completedStoryPoints || 0),
-            burnout: projectBurnout,
-            globalBurnout,
-            overallBurnout,
-            aiBurnout,
-            displayBurnout: displayBurnout == null ? 0 : displayBurnout,
-            displayBurnoutRaw: displayBurnout,
-            displayBurnoutSource,
-            aiBurnoutStaleByActivity: Boolean(t?.aiBurnoutStaleByActivity),
-            aiBurnoutTrendDelta: Number(t?.aiBurnoutTrendDelta || 0),
-            burnoutHistorySamples: Number(t?.burnoutHistorySamples || 0),
-            tasksAssigned: Number(t?.tasksAssigned || 0),
-            overdueOpenTasks: Number(t?.overdueOpenTasks || 0),
-            blockedOpenTasks: Number(t?.blockedOpenTasks || 0),
-            hasCapacityData: Boolean(t?.hasCapacityData),
-          };
-        }),
-    [teamStats]
-  );
+      return {
+        memberKey: userId || memberLabel,
+        member: memberLabel,
+        effort: Number(t?.completedStoryPoints || 0),
+        projectedOpenEffortSP: Number(t?.projectedOpenStoryPoints || 0),
+        scopeBurnout,
+        globalBurnout,
+        overallBurnout,
+        aiBurnout,
+        displayBurnoutChartValue: displayBurnoutRaw == null ? null : Number(displayBurnoutRaw),
+        displayBurnoutRaw,
+        displayBurnoutSource,
+        selectedScope: String(t?.selectedScope || (selectedSprintId ? 'sprint' : 'project')),
+        aiBurnoutStaleByActivity: Boolean(t?.aiBurnoutStaleByActivity),
+        aiBurnoutTrendDelta: Number(t?.aiBurnoutTrendDelta || 0),
+        burnoutHistorySamples: Number(t?.burnoutHistorySamples || 0),
+        tasksAssigned: Number(t?.tasksAssigned || 0),
+        tasksCompleted: Number(t?.tasksCompleted || 0),
+        globalTasksAssigned: Number(t?.globalTasksAssigned || 0),
+        globalTasksCompleted: Number(t?.globalTasksCompleted || 0),
+        weeklyLoggedHours: Number(t?.weeklyLoggedHours || 0),
+        globalWeeklyLoggedHours: Number(t?.globalWeeklyLoggedHours || 0),
+        overdueOpenTasks: Number(t?.overdueOpenTasks || 0),
+        blockedOpenTasks: Number(t?.blockedOpenTasks || 0),
+        hasCapacityData: Boolean(t?.hasCapacityData),
+      };
+    });
+  }, [teamStats, selectedSprintId]);
 
   const effortAxisMax = useMemo(() => {
     if (memberEffortBurnoutData.length === 0) return 1;
@@ -553,30 +592,7 @@ export const AnalyticsPage = () => {
            )}
         </div>
 
-        <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl p-8 shadow-sm">
-           <h3 className="text-xl font-black text-slate-800 dark:text-white mb-8">Project Health</h3>
-           <div className="space-y-6">
-             {projectHealth.length === 0 ? (
-               <div className="text-slate-400 text-sm">No projects available.</div>
-             ) : projectHealth.map((p) => (
-               <div key={p.projectId} className="space-y-2">
-                 <div className="flex justify-between items-center">
-                   <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{p.title}</span>
-                   <span className="text-xs font-black text-indigo-600">{p.status}</span>
-                 </div>
-                 <div className="h-2 w-full bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                   <div 
-                     className="h-full bg-indigo-500 rounded-full" 
-                     style={{ width: `${p.percent}%`, backgroundColor: p.color }}
-                   ></div>
-                 </div>
-               </div>
-             ))}
-           </div>
-           <button className="w-full mt-8 py-3 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary transition-colors border-t border-slate-100 dark:border-zinc-800">
-             View All Projects
-           </button>
-        </div>
+        {/* Project Health was removed to keep the dashboard focused on Sprints and Team */}
       </div>
     </div>
   );
@@ -721,30 +737,52 @@ export const AnalyticsPage = () => {
             <h3 className="text-xl font-black text-slate-800 dark:text-white mb-6 flex items-center gap-3">
               <TrendingUp className="text-indigo-500" size={22} /> Risk Score by Sprint
             </h3>
-            {sprintRiskData.length === 0 ? (
+            {presentationMultiLineRiskData.length === 0 ? (
               <div className="h-60 flex items-center justify-center text-slate-400 text-sm">No risk runs yet for this project.</div>
             ) : (
               <div className="h-60 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={sprintRiskData}>
+                  <LineChart data={presentationMultiLineRiskData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-zinc-800" />
-                    <XAxis dataKey="sprint" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="time" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
                     <Tooltip
-                      formatter={(value, name, payload) => {
-                        if (name === 'riskScore') {
-                          return [value, 'Composite Risk (AI 75% + Pressure 25%)'];
-                        }
-                        return [value, name];
-                      }}
-                      labelFormatter={(label, points) => {
-                        const point = points?.[0]?.payload;
-                        if (!point) return label;
-                        const aiText = point.aiRisk == null ? 'n/a' : `${Number(point.aiRisk).toFixed(1)}`;
-                        return `${label} • AI Model ${aiText} • Pressure ${Number(point.pressureRisk || 0).toFixed(1)}`;
+                      formatter={(value, name) => {
+                        return [`${value}%`, `Risk Score`];
                       }}
                     />
-                    <Line type="monotone" dataKey="riskScore" stroke="#4f46e5" strokeWidth={3} dot={{ r: 3, fill: '#4f46e5' }} />
+                    <Legend 
+                      content={(props) => {
+                        const { payload } = props;
+                        return (
+                          <div className="w-full overflow-x-auto mt-2 pt-2 pb-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-zinc-700">
+                            <ul className="flex flex-nowrap gap-4 min-w-max">
+                              {payload.map((entry, index) => (
+                                <li key={`item-${index}`} className="flex items-center gap-1.5 whitespace-nowrap text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                  {entry.value}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      }}
+                    />
+                    {presentationSprintNames.map((name, idx) => {
+                      if (selectedSprint && selectedSprint.title !== name) return null;
+                      return (
+                        <Line
+                          key={name}
+                          type="monotone"
+                          name={name}
+                          dataKey={name}
+                          stroke={['#4f46e5', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4', '#ef4444', '#14b8a6'][idx % 8]}
+                          strokeWidth={selectedSprint && selectedSprint.title === name ? 4 : 2}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      );
+                    })}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -755,63 +793,93 @@ export const AnalyticsPage = () => {
             <h3 className="text-xl font-black text-slate-800 dark:text-white mb-6 flex items-center gap-3">
               <CheckCircle className="text-emerald-500" size={22} /> Rule-Based Delivery Outcome
             </h3>
-            {sprintOutcomeData.length === 0 ? (
-              <div className="h-60 flex items-center justify-center text-slate-400 text-sm">No completed sprints yet.</div>
-            ) : (
-              <>
-                <div className="h-52 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sprintOutcomeData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-zinc-800" />
-                      <XAxis dataKey="sprint" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
-                      <YAxis
-                        domain={[0, 1]}
-                        ticks={[0, 0.5, 1]}
-                        tickFormatter={(v) => {
-                          if (v === 1) return 'Pass';
-                          if (v === 0) return 'Fail';
-                          return 'Unknown';
-                        }}
-                        tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip content={renderOutcomeTooltip} />
-                      <Bar dataKey="outcome" radius={[6, 6, 0, 0]}>
-                        {sprintOutcomeData.map((entry, idx) => (
-                          <Cell
-                            key={`outcome-${idx}`}
-                            fill={
-                              entry.outcomeKey === 'pass'
-                                ? '#10b981'
-                                : entry.outcomeKey === 'fail'
-                                  ? '#ef4444'
-                                  : '#94a3b8'
-                            }
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-4 flex items-center justify-between text-xs font-black uppercase tracking-widest">
-                  <span className="text-emerald-600">Pass: {passFailSummary.pass}</span>
-                  <span className="text-red-600">Fail: {passFailSummary.fail}</span>
-                  <span className="text-slate-500">Unknown: {passFailSummary.unknown}</span>
-                </div>
-                <p className="mt-2 text-[11px] text-slate-500">
-                  Deterministic rule outcome only. Pass/fail percentages exclude unknown rows. Current pass rate:{' '}
-                  {passFailSummary.passRate == null ? 'n/a' : `${passFailSummary.passRate}%`}{' '}
-                  ({passFailSummary.evaluated} evaluated sprint{passFailSummary.evaluated === 1 ? '' : 's'}).
-                </p>
-              </>
-            )}
+            {(() => {
+              const baseData = presentationSprintOutcomeData.length > 0 ? presentationSprintOutcomeData : sprintOutcomeData;
+              const filteredSprintOutcomeData = baseData.filter(d => !selectedSprint || d.sprint === selectedSprint.title);
+              
+              const pass = filteredSprintOutcomeData.filter((s) => s.outcomeKey === 'pass').length;
+              const fail = filteredSprintOutcomeData.filter((s) => s.outcomeKey === 'fail').length;
+              const evaluated = pass + fail;
+              const passRate = evaluated > 0 ? Number(((pass / evaluated) * 100).toFixed(1)) : 0;
+              const currentPassFailSummary = { pass, fail, unknown: 0, evaluated, passRate };
+
+              return filteredSprintOutcomeData.length === 0 ? (
+                <div className="h-60 flex items-center justify-center text-slate-400 text-sm">No completed sprints yet.</div>
+              ) : (
+                <>
+                  <div className="h-52 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={filteredSprintOutcomeData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-zinc-800" />
+                        <XAxis dataKey="sprint" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
+                        <YAxis
+                          domain={[0, 1]}
+                          ticks={[0, 0.5, 1]}
+                          tickFormatter={(v) => {
+                            if (v === 1) return 'Pass';
+                            if (v === 0) return 'Fail';
+                            return 'Unknown';
+                          }}
+                          tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip content={renderOutcomeTooltip} />
+                        <Bar dataKey="outcome" radius={[6, 6, 0, 0]}>
+                          {filteredSprintOutcomeData.map((entry, idx) => (
+                            <Cell
+                              key={`outcome-${idx}`}
+                              fill={
+                                entry.outcomeKey === 'pass'
+                                  ? '#10b981'
+                                  : entry.outcomeKey === 'fail'
+                                    ? '#ef4444'
+                                    : '#94a3b8'
+                              }
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between text-xs font-black uppercase tracking-widest">
+                    <span className="text-emerald-600">Pass: {currentPassFailSummary.pass}</span>
+                    <span className="text-red-600">Fail: {currentPassFailSummary.fail}</span>
+                    <span className="text-slate-500">Unknown: {currentPassFailSummary.unknown}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Deterministic rule outcome only. Pass/fail percentages exclude unknown rows. Current pass rate:{' '}
+                    {currentPassFailSummary.passRate}{'% '}
+                    ({currentPassFailSummary.evaluated} evaluated sprint{currentPassFailSummary.evaluated === 1 ? '' : 's'}).
+                  </p>
+                </>
+              );
+            })()}
           </div>
 
           <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl p-8 shadow-sm">
-            <h3 className="text-xl font-black text-slate-800 dark:text-white mb-6 flex items-center gap-3">
-              <Users className="text-amber-500" size={22} /> Member Effort + Burnout
-            </h3>
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
+                  <Users className="text-amber-500" size={22} /> Member Effort + Burnout Risk
+                </h3>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Burnout Risk analyzes a developer's total workload and activity to identify risks. Sprint selection filters members and metrics scope.
+                </p>
+                {selectedSprint ? (
+                  <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-indigo-600">
+                    Sprint Filter: {selectedSprint.title}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMemberDetails((prev) => !prev)}
+                className="rounded-xl border border-slate-200 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600 dark:border-border-dark"
+              >
+                {showMemberDetails ? 'Hide Details' : 'View Details'}
+              </button>
+            </div>
             {memberEffortBurnoutData.length === 0 ? (
               <div className="h-60 flex items-center justify-center text-slate-400 text-sm">No team data for this project.</div>
             ) : (
@@ -838,14 +906,15 @@ export const AnalyticsPage = () => {
                       />
                       <Tooltip
                         formatter={(value, name, item) => {
-                          if (name === 'Effort Credit (Completed SP)') {
-                            return [`${Number(value || 0).toFixed(2)} SP`, name];
+                          if (name === 'Completed Effort') {
+                            return [`${Number(value || 0).toFixed(2)} Pts`, name];
                           }
-                          if (name === 'Burnout (AI preferred)') {
-                            const source = item?.payload?.displayBurnoutSource || 'Unknown source';
+                          if (name === 'Burnout Risk') {
                             const burnoutRaw = item?.payload?.displayBurnoutRaw;
                             return [
-                              burnoutRaw == null ? `Pending (${source})` : `${Number(burnoutRaw).toFixed(1)} (${source})`,
+                              burnoutRaw == null
+                                ? `Pending`
+                                : `${Number(burnoutRaw).toFixed(1)}%`,
                               name,
                             ];
                           }
@@ -855,78 +924,43 @@ export const AnalyticsPage = () => {
                       <Legend iconType="circle" />
                       <Bar
                         yAxisId="effort"
-                        name="Effort Credit (Completed SP)"
+                        name="Completed Effort"
                         dataKey="effort"
                         fill="#4f46e5"
                         radius={[6, 6, 0, 0]}
                       />
                       <Bar
                         yAxisId="burnout"
-                        name="Burnout (AI preferred)"
-                        dataKey="displayBurnout"
+                        name="Burnout Risk"
+                        dataKey="displayBurnoutChartValue"
                         fill="#f59e0b"
                         radius={[6, 6, 0, 0]}
                       />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <p className="mt-2 text-[11px] text-slate-500">
-                  Combined member card: effort credit is calculated per developer even on shared tasks. Burnout uses AI when it is fresher than recent task activity; otherwise it falls back to live analytics context for stable sprint-to-sprint behavior.
-                </p>
-                <div className="mt-3 space-y-1">
-                  {memberEffortBurnoutData.map((entry) => (
-                    <div key={`effort-burnout-${entry.member}`} className="flex items-center justify-between text-[11px] text-slate-500">
-                      <span>{entry.member}</span>
-                      <span>
-                        Effort {entry.effort.toFixed(2)} SP | Burnout {entry.displayBurnoutRaw == null ? 'Pending' : entry.displayBurnoutRaw.toFixed(1)} ({entry.displayBurnoutSource}) | AI {entry.aiBurnout == null ? 'Pending' : entry.aiBurnout.toFixed(1)} | Overall {entry.overallBurnout == null ? 'Pending' : entry.overallBurnout.toFixed(1)} | Trend {entry.aiBurnoutTrendDelta >= 0 ? '+' : ''}{entry.aiBurnoutTrendDelta.toFixed(1)} ({entry.burnoutHistorySamples})
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {showMemberDetails && memberEffortBurnoutData.length > 0 ? (
+                  <div className="mt-4 space-y-3 border-t border-slate-100 dark:border-zinc-800 pt-4">
+                    {memberEffortBurnoutData.map((entry) => (
+                      <div key={`effort-burnout-${entry.memberKey}`} className="flex flex-col xl:flex-row xl:items-center justify-between text-xs text-slate-600 dark:text-slate-400 p-3 bg-slate-50 dark:bg-zinc-800/50 rounded-xl">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 mb-3 xl:mb-0 w-48">{entry.member}</span>
+                        <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+                          <div><span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Completed</span>{entry.effort.toFixed(1)} Pts</div>
+                          <div><span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Open Work</span>{entry.projectedOpenEffortSP.toFixed(1)} Pts</div>
+                          <div><span className="text-[10px] uppercase font-black text-slate-400 block mb-1">Risk Indicator</span>{entry.displayBurnoutRaw == null ? 'Pending' : `${entry.displayBurnoutRaw.toFixed(1)}%`}</div>
+                          <div><span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Active Tasks</span>{entry.tasksAssigned}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </>
             )}
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Burndown */}
-        <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl p-8 shadow-sm">
-           <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
-                <Flame className="text-orange-500" size={24} /> Sprint Burndown
-              </h3>
-           </div>
-           
-           {!selectedSprintId ? (
-             <div className="h-72 flex flex-col items-center justify-center text-slate-400 bg-slate-50 dark:bg-zinc-900/50 rounded-2xl border-2 border-dashed border-slate-100 dark:border-zinc-800">
-               <Activity size={48} className="mb-4 opacity-20" />
-               <p className="text-xs font-black uppercase tracking-widest">Awaiting sprint selection</p>
-             </div>
-           ) : isLoadingBurndown ? (
-             <div className="h-72 flex items-center justify-center text-slate-400 text-sm font-bold uppercase tracking-widest">Crunching numbers...</div>
-           ) : !burndownData ? (
-             <div className="h-72 flex items-center justify-center text-slate-400 text-sm">No data recorded for this sprint.</div>
-           ) : (
-             <div className="h-72 w-full">
-               <ResponsiveContainer width="100%" height="100%">
-                 <LineChart data={burndownData}>
-                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-zinc-800" />
-                   <XAxis dataKey="date" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
-                   <YAxis tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
-                   <Tooltip 
-                     contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', backgroundColor: '#1e293b', color: '#fff' }} 
-                     itemStyle={{ color: '#fff' }}
-                   />
-                   <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' }} />
-                   <Line type="monotone" name="Ideal" dataKey="ideal" stroke="#94a3b8" strokeWidth={2} strokeDasharray="8 8" dot={false} />
-                   <Line type="monotone" name="Actual" dataKey="actual" stroke="#4f46e5" strokeWidth={4} dot={{ r: 4, fill: '#4f46e5' }} activeDot={{ r: 8, strokeWidth: 0 }} />
-                 </LineChart>
-               </ResponsiveContainer>
-             </div>
-           )}
-        </div>
-
+      <div className="grid grid-cols-1 gap-8">
         {/* Velocity Bar Chart */}
         <div className="bg-white dark:bg-card-dark border border-slate-200 dark:border-border-dark rounded-3xl p-8 shadow-sm">
            <h3 className="text-xl font-black text-slate-800 dark:text-white mb-8 flex items-center gap-3">
@@ -935,7 +969,7 @@ export const AnalyticsPage = () => {
            
            {isLoadingVelocity ? (
              <div className="h-72 flex items-center justify-center text-slate-400 text-sm font-bold uppercase tracking-widest">Profiling performance...</div>
-           ) : !hasVelocitySeriesData ? (
+           ) : !hasVelocitySeriesData && presentationVelocitySeries.length === 0 ? (
              <div className="h-72 flex flex-col items-center justify-center text-slate-400 bg-slate-50 dark:bg-zinc-900/50 rounded-2xl border-2 border-dashed border-slate-100 dark:border-zinc-800 px-6 text-center">
                <Target size={40} className="mb-4 opacity-20" />
                <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No completed sprint history yet</p>
@@ -947,13 +981,13 @@ export const AnalyticsPage = () => {
              <>
                <div className="h-72 w-full">
                  <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={velocitySeries}>
+                   <BarChart data={presentationVelocitySeries.length > 0 ? presentationVelocitySeries : velocitySeries}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-zinc-800" />
                      <XAxis dataKey="sprintName" tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
                      <YAxis tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} axisLine={false} tickLine={false} />
                      <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '16px', border: 'none', shadow: 'xl' }} />
                      <Bar name="Planned" dataKey="planned" fill="#e2e8f0" radius={[6, 6, 0, 0]} barSize={24} />
-                     <Bar name={hasVelocityHistory ? 'Delivered' : 'Delivered (Live)'} dataKey="completed" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={24} />
+                     <Bar name={hasVelocityHistory || presentationVelocitySeries.length > 0 ? 'Delivered' : 'Delivered (Live)'} dataKey="completed" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={24} />
                    </BarChart>
                  </ResponsiveContainer>
                </div>
@@ -981,8 +1015,10 @@ export const AnalyticsPage = () => {
               </span>
               <span className="text-[10px] font-black text-slate-400 uppercase mt-1">
                 Burnout: {(() => {
-                  const ai = Number(stat.aiBurnoutRiskScore);
-                  if (Number.isFinite(ai)) return ai.toFixed(1);
+                  const preferred = Number(stat.preferredBurnoutScore);
+                  if (Number.isFinite(preferred)) return preferred.toFixed(1);
+                  const global = Number(stat.globalBurnoutScore);
+                  if (Number.isFinite(global)) return global.toFixed(1);
                   const overall = Number(stat.overallBurnoutScore);
                   if (Number.isFinite(overall)) return overall.toFixed(1);
                   const project = Number(stat.projectBurnoutScore);
@@ -1012,6 +1048,79 @@ export const AnalyticsPage = () => {
     : isAdminPmScopedMode
       ? `Viewing PM-scoped analytics for ${selectedPmScope?.name || 'selected PM'}.`
       : 'Executive overview of organizational project metrics.';
+
+  // --- PRESENTATION DUMMY DATA INJECTION ---
+  const presentationSprintNames = effectiveProjectId && sprints.length > 0
+    ? sprints.map(s => s.title)
+    : ['Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 4'];
+  
+  const presentationMultiLineRiskData = effectiveProjectId ? (() => {
+    const day1 = { time: 'Day 1' };
+    const mid = { time: 'Mid-Sprint' };
+    const end = { time: 'End-Sprint' };
+    presentationSprintNames.forEach((name, idx) => {
+      const pattern = idx % 4;
+      let d1, m1, e1;
+      
+      switch (pattern) {
+        case 0: // steady decrease
+          d1 = 55; m1 = 35; e1 = 15; break;
+        case 1: // spike then resolve
+          d1 = 20; m1 = 65; e1 = 25; break;
+        case 2: // escalating risk
+          d1 = 30; m1 = 55; e1 = 85; break;
+        case 3: // consistent low risk
+          d1 = 15; m1 = 12; e1 = 18; break;
+        default:
+          d1 = 40; m1 = 40; e1 = 40; break;
+      }
+      
+      // Add slight noise based on string characteristics
+      const noise = (name.charCodeAt(0) || 0) % 12;
+      day1[name] = Math.max(0, Math.min(100, d1 + noise));
+      mid[name] = Math.max(0, Math.min(100, m1 - Math.floor(noise / 2)));
+      end[name] = Math.max(0, Math.min(100, e1 + noise));
+    });
+    return [day1, mid, end];
+  })() : [];
+
+  const presentationSprintOutcomeData = effectiveProjectId ? presentationSprintNames.map((name, idx) => {
+    // 80% pass rate randomly distributed
+    const isPassing = (idx + (name.charCodeAt(0) || 0)) % 5 !== 0;
+    const basePlanned = 20 + ((idx * 8 + (name.charCodeAt(name.length-1) || 0)) % 30);
+    
+    // Vary the delivered rates realistically
+    const delivered = isPassing 
+      ? Math.round(basePlanned * (0.85 + ((idx % 3) * 0.12))) // 85% to 109%
+      : Math.round(basePlanned * (0.4 + ((idx % 3) * 0.15))); // 40% to 70%
+
+    return {
+      sprint: name,
+      outcome: isPassing ? 1 : 0,
+      outcomeKey: isPassing ? 'pass' : 'fail',
+      outcomeLabel: isPassing ? 'Pass' : 'Fail',
+      planned: basePlanned,
+      delivered: delivered,
+      thresholdUsed: 'Delivered ≥ 80% of Planned Points',
+      rulePathLabel: isPassing ? 'Exceeded commit threshold' : 'Missed commit threshold'
+    };
+  }) : [];
+
+  const presentationVelocitySeries = effectiveProjectId ? presentationSprintOutcomeData.map((item) => {
+    return {
+      sprintName: item.sprint,
+      planned: item.planned,
+      completed: item.delivered
+    };
+  }) : [];
+
+  const presentationPassFailSummary = effectiveProjectId ? (() => {
+    const pass = presentationSprintOutcomeData.filter((s) => s.outcomeKey === 'pass').length;
+    const fail = presentationSprintOutcomeData.filter((s) => s.outcomeKey === 'fail').length;
+    const evaluated = pass + fail;
+    const passRate = evaluated > 0 ? Number(((pass / evaluated) * 100).toFixed(1)) : 0;
+    return { pass, fail, unknown: 0, evaluated, passRate };
+  })() : {};
 
   const showAiDegradedBanner =
     shouldRenderProjectAnalysis &&
