@@ -206,19 +206,19 @@ The models were trained on world-class, peer-reviewed datasets from the **IEEE T
 
 ### 1. Secure Authentication & Onboarding
 The entry point features a sleek, JWT-secured login. New developers enter a "Pending" state until approved by an Admin or PM.
-![Login Page](docs/assests/loginpage.png)
+![Login Page](docs/assets/loginpage.png)
 
 ### 2. Administrator Authorization Center
 The "Free Pool" management interface allows Admins to vet, approve, and assign developers to teams with a single click.
-![Admin Free Pool Management](docs/assests/adminfreepool.png)
+![Admin Free Pool Management](docs/assets/adminfreepool.png)
 
 ### 3. Intelligence-Driven Kanban Board
 A real-time, drag-and-drop board featuring an **AI-powered Sprint Risk Indicator**. The board synchronizes instantly across all team members via WebSockets.
-![Kanban & Sprint Board](docs/assests/kanbassprintborad.png)
+![Kanban & Sprint Board](docs/assets/kanban_board.png)
 
 ### 4. Professional Analytics Dashboard
 A high-fidelity view of project health, including multi-project risk trajectories, committed vs. delivered velocity trends, and dual-axis burnout risk monitoring.
-![Analytics Dashboard](docs/assests/analytics.png)
+![Analytics Dashboard](docs/assets/analytics.png)
 
 ---
 
